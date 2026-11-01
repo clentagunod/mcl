@@ -1,0 +1,34 @@
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { SetupNotice } from './components/SetupNotice';
+import { missingEnvKeys } from './config/env';
+import './index.css';
+
+async function bootstrap() {
+  const container = document.getElementById('root');
+  if (!container) throw new Error('Root element #root was not found.');
+  const root = createRoot(container);
+
+  // Firebase is only loaded when it is configured, so a missing ".env" shows a
+  // helpful message instead of a crash.
+  if (missingEnvKeys.length > 0) {
+    root.render(
+      <StrictMode>
+        <SetupNotice missingKeys={missingEnvKeys} />
+      </StrictMode>,
+    );
+    return;
+  }
+
+  const { default: App } = await import('./App');
+  root.render(
+    <StrictMode>
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
+    </StrictMode>,
+  );
+}
+
+void bootstrap();
