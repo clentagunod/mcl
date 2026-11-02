@@ -1,0 +1,43 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "paths": {
+      "@web/*": [
+        "../../web/src/*"
+      ],
+      "react": [
+        "../../web/node_modules/@types/react"
+      ],
+      "react/*": [
+        "../../web/node_modules/@types/react/*"
+      ],
+      "react-dom": ["../../web/node_modules/@types/react-dom"],
+      "react-dom/*": [
+        "../../web/node_modules/@types/react-dom/*"
+      ],
+      "firebase/*": [
+        "../../web/node_modules/firebase/*"
+      ],
+      "react-router-dom": [
+        "../../web/node_modules/react-router-dom"
+      ]
+    },
+    "types": []
+  },
+  "include": [
+    "src",
+    "../../web/src/vite-env.d.ts"
+  ]
+}
