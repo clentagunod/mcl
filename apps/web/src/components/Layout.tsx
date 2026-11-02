@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { APP_NAME } from '../config/app';
+import { useSettings } from '../context/SettingsContext';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { ErrorState } from './StateMessage';
+import { Logo } from './Logo';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', end: true },
@@ -12,11 +13,13 @@ const NAV_ITEMS = [
   { to: '/liquidation', label: 'Consolidation / Liquidation', end: false },
   { to: '/collectors', label: 'Collectors', end: false },
   { to: '/holidays', label: 'Holidays', end: false },
+  { to: '/settings', label: 'Settings', end: false },
 ];
 
 export function Layout() {
   const { user, signOut } = useAuth();
   const { error } = useData();
+  const { settings, error: settingsError } = useSettings();
   const [signingOut, setSigningOut] = useState(false);
 
   async function handleSignOut() {
@@ -31,7 +34,10 @@ export function Layout() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand">{APP_NAME}</div>
+        <div className="brand">
+          <Logo />
+          <span>{settings.general.businessName}</span>
+        </div>
         <nav aria-label="Main">
           <ul>
             {NAV_ITEMS.map((item) => (
@@ -54,6 +60,7 @@ export function Layout() {
       </aside>
       <main className="content">
         {error && <ErrorState message={error} />}
+        {settingsError && <p className="alert alert-error" role="alert">Settings could not sync: {settingsError} Open Settings for connection details.</p>}
         <Outlet />
       </main>
     </div>

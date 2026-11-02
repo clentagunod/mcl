@@ -6,3 +6,6 @@ dist
 *.log
 .firebase
 .DS_Store
+.tmp/
+*-debug.log
+*-debug.log.*

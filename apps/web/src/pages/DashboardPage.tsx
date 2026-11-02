@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { PageHeader } from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { EmptyState, LoadingState } from '../components/StateMessage';
-import { DUE_CLIENTS_LIMIT, RECENT_PAYMENTS_LIMIT } from '../config/app';
+import { useSettings } from '../context/SettingsContext';
 import { useData } from '../context/DataContext';
 import { formatDate, formatDateTime } from '../lib/dates';
 import { formatClientName } from '../lib/loan';
@@ -26,10 +26,11 @@ function StatCard({ label, value, tone }: StatCardProps) {
 
 export default function DashboardPage() {
   const { rows, payments, collectors, today, loading } = useData();
+  const { settings: { general } } = useSettings();
 
   const stats = useMemo(() => computeDashboardStats(rows, payments, today), [rows, payments, today]);
   const activity = useMemo(() => computeCollectorActivity(collectors, payments, today), [collectors, payments, today]);
-  const recent = useMemo(() => recentPayments(payments, RECENT_PAYMENTS_LIMIT), [payments]);
+  const recent = useMemo(() => recentPayments(payments, general.recentPaymentsLimit), [payments, general.recentPaymentsLimit]);
   const clientNames = useMemo(
     () => new Map(rows.map((row) => [row.client.id, formatClientName(row.client)])),
     [rows],
@@ -39,8 +40,8 @@ export default function DashboardPage() {
       rows
         .filter((row) => row.summary.status === 'due')
         .sort((a, b) => b.summary.outstanding - a.summary.outstanding)
-        .slice(0, DUE_CLIENTS_LIMIT),
-    [rows],
+        .slice(0, general.dueClientsLimit),
+    [rows, general.dueClientsLimit],
   );
 
   if (loading) return <LoadingState />;

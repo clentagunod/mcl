@@ -4,6 +4,7 @@
   "description": "MCL Dashboard - lending admin web app",
   "scripts": {
     "test": "vitest run",
+    "test:rules": "node scripts/test-firestore-rules.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
@@ -12,16 +13,21 @@
   "private": "true",
   "type": "module",
   "dependencies": {
+    "docx": "^9.15.1",
+    "fflate": "^0.8.3",
     "firebase": "^13.1.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.5"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^6.0.0",
+    "@playwright/test": "^1.64.1",
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "firebase-tools": "^15.34.2",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"

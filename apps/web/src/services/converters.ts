@@ -32,6 +32,10 @@ export function clientFromDoc(snapshot: QueryDocumentSnapshot): Client {
   const data = read(snapshot);
   return {
     id: snapshot.id,
+    clientNumber: text(data.clientNumber) || undefined,
+    transactionNumber: text(data.transactionNumber) || undefined,
+    dailyAmount: typeof data.dailyAmount === 'number' && Number.isFinite(data.dailyAmount) && data.dailyAmount > 0
+      ? amount(data.dailyAmount) : undefined,
     lastName: text(data.lastName),
     firstName: text(data.firstName),
     middleName: text(data.middleName),
@@ -53,6 +57,7 @@ export function paymentFromDoc(snapshot: QueryDocumentSnapshot): Payment {
     paymentDate: text(data.paymentDate),
     collectorId: text(data.collectorId),
     collectorName: text(data.collectorName),
+    notes: text(data.notes) || text(data.note),
     createdAt: toDate(data.createdAt),
   };
 }

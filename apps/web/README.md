@@ -4,13 +4,17 @@ Admin web app for a small lending business: track clients, balances and collecto
 Built with **React + Vite + TypeScript** and **Firebase** (Authentication + Firestore), shared with a separate
 Android app that collectors use to enter payments.
 
+For Android integration, data contracts and the new daily-payment policy, read the
+[Android development context](./docs/android-development-context.md). Implementation
+and setup for reports/settings are covered in the [workspace guide](./docs/print-studio.md).
+
 ## 1. One-time Firebase setup
 
 1. In the [Firebase Console](https://console.firebase.google.com), create a project (or use your existing one).
 2. **Authentication → Sign-in method →** enable **Email/Password**.
 3. **Firestore Database →** create a database (production mode).
 4. **Rules:** open the *Rules* tab and paste the contents of [`firestore.rules`](./firestore.rules), then **Publish**.
-   (Or, with the Firebase CLI: `firebase deploy --only firestore:rules`.)
+   From `apps/web`, deploy with `npx firebase-tools deploy --only firestore:rules --config firebase.print-studio.json --project YOUR_PROJECT_ID`.
 5. **Project settings → General → Your apps →** add a **Web app** and copy its config values.
 6. Copy `.env.example` to `.env` and paste the values in.
 
@@ -61,7 +65,8 @@ All dates are plain `"YYYY-MM-DD"` strings. Money is a number in pesos.
 The collector app signs in with Firebase Authentication (email + password).
 
 **`clients/{id}`** – `lastName`, `firstName`, `middleName`, `address`, `cellphone`, `principal` (number),
-`interest` (number), `loanTermDays` (45 | 50 | 58), `approvalDate`. Collectors have **read-only** access.
+`interest` (number), `loanTermDays` (45 | 50 | 58), `approvalDate`, `dailyAmount`, `clientNumber` and
+`transactionNumber`. Collectors have **read-only** access. Preserve legacy document IDs in payment references.
 
 **`payments/{id}`** – what the Android app **creates** (it cannot edit or delete):
 
@@ -74,7 +79,10 @@ The collector app signs in with Firebase Authentication (email + password).
 | `collectorName` | string    | the collector's `fullName`                                  |
 | `createdAt`     | timestamp | **must be the server timestamp** (`FieldValue.serverTimestamp()`) |
 
-The document must contain **exactly** these six fields. Anything else is rejected by `firestore.rules`.
+The six fields are required. Optional `notes` (preferred) or legacy `note` may contain
+up to 1,500 characters. Other fields are rejected for collector writes. The collector
+minimum setting lives in `settings/Configurations/elements/paymentPolicy`; active
+collectors may read that one settings document.
 
 **`holidays/{yyyy-MM-dd}`** – `date`, `name`. Collectors may read them.
 
@@ -99,4 +107,8 @@ src/
   **Reset password**, which emails the collector a reset link, so give collectors real, reachable emails.
 - All payments are loaded into the browser to compute balances. This is fine for a small business
   (thousands of payments); for much larger volumes, store a running total per client with a Cloud Function.
-- **Printables** and **Consolidation / Liquidation** are placeholders, as requested.
+- Consolidation / Liquidation is a live, paginated 58-day ledger. Its balance is
+  principal minus all payments; the dashboard's loan outstanding also includes interest.
+- The daily-payable minimum is optional and applies to collector receipts. Web admins
+  may enter smaller partial/final settlements. The prepared rules must be published
+  to enforce this in Android; its UI remains unchanged. See the Android context above.

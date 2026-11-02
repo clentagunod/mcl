@@ -12,6 +12,7 @@ const PrintablesPage = lazy(() => import('./pages/PrintablesPage'));
 const LiquidationPage = lazy(() => import('./pages/LiquidationPage'));
 const CollectorsPage = lazy(() => import('./pages/collectors/CollectorsPage'));
 const HolidaysPage = lazy(() => import('./pages/HolidaysPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 
 export default function App() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
               <Route path="liquidation" element={<LiquidationPage />} />
               <Route path="collectors" element={<CollectorsPage />} />
               <Route path="holidays" element={<HolidaysPage />} />
+              <Route path="settings" element={<SettingsPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

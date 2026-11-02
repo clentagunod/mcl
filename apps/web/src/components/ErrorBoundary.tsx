@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { Logo } from './Logo';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -25,6 +26,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     return (
       <div className="login-wrap">
         <div className="card login-card">
+          <Logo />
           <h1>Something went wrong</h1>
           <p className="muted">The page hit an unexpected problem. Reloading usually fixes it.</p>
           <button type="button" className="btn btn-primary" onClick={() => window.location.reload()}>

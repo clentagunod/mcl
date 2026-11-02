@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
 import { FormField } from '../components/FormField';
+import { Logo } from '../components/Logo';
 import { LoadingState } from '../components/StateMessage';
 import { APP_NAME } from '../config/app';
 import { useAuth } from '../context/AuthContext';
@@ -34,6 +35,7 @@ export default function LoginPage() {
   return (
     <div className="login-wrap">
       <form className="card login-card" onSubmit={handleSubmit} noValidate>
+        <Logo />
         <h1>{APP_NAME}</h1>
         <p className="muted">Administrator sign in</p>
 

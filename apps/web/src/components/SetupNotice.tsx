@@ -1,3 +1,5 @@
+import { Logo } from './Logo';
+
 interface SetupNoticeProps {
   missingKeys: string[];
 }
@@ -7,6 +9,7 @@ export function SetupNotice({ missingKeys }: SetupNoticeProps) {
   return (
     <div className="login-wrap">
       <div className="card login-card">
+        <Logo />
         <h1>Firebase is not set up yet</h1>
         <p>
           Copy <code>.env.example</code> to <code>.env</code>, fill in your Firebase web app settings, then restart

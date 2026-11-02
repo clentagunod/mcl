@@ -7,6 +7,11 @@ export type UserRole = 'admin' | 'collector';
 
 export interface Client {
   id: string;
+  /** Stable public identifier; legacy document IDs remain unchanged. */
+  clientNumber?: string;
+  /** Unique, zero-padded five digit loan transaction number. */
+  transactionNumber?: string;
+  dailyAmount?: number;
   lastName: string;
   firstName: string;
   middleName: string;
@@ -22,7 +27,7 @@ export interface Client {
 }
 
 /** The fields an admin supplies when adding or editing a client. */
-export type ClientInput = Omit<Client, 'id'>;
+export type ClientInput = Omit<Client, 'id' | 'clientNumber' | 'transactionNumber'>;
 
 /** A principal repayment entered by a collector (or an admin). */
 export interface Payment {
@@ -33,6 +38,7 @@ export interface Payment {
   paymentDate: ISODate;
   collectorId: string;
   collectorName: string;
+  notes?: string;
   /** When the entry was recorded (server time). Null for a split second after saving. */
   createdAt: Date | null;
 }

@@ -12,6 +12,9 @@ import { formatPeso } from '../../lib/money';
 import { validatePaymentForm, type FieldErrors, type PaymentFormValues } from '../../lib/validation';
 import { addPayment, deletePayment } from '../../services/payments';
 import type { Payment } from '../../types';
+import { useSettings } from '../../context/SettingsContext';
+import { dailyPayable, indexEntries, publicClientId } from '../../lib/printables';
+import { collectorMinimum } from '../../lib/payment-policy';
 
 interface PaymentsModalProps {
   clientId: string;
@@ -22,6 +25,8 @@ interface PaymentsModalProps {
 export function PaymentsModal({ clientId, onClose }: PaymentsModalProps) {
   const { rows, payments, today } = useData();
   const { user, profile } = useAuth();
+  const { settings, loading: policyLoading, error: policyError } = useSettings();
+  const [notes, setNotes] = useState('');
 
   const row = rows.find((candidate) => candidate.client.id === clientId);
   const clientPayments = useMemo(
@@ -41,15 +46,19 @@ export function PaymentsModal({ clientId, onClose }: PaymentsModalProps) {
   // The client may be deleted while this window is open.
   if (!row || !user) return null;
   const { client, summary } = row;
+  const minimumAmount = collectorMinimum(client, settings.payments.enforceDailyMinimum, profile?.role);
+  const policyBlocksEntry = profile?.role === 'collector' && (policyLoading || !!policyError);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (busy || policyBlocksEntry) return;
     setFormError(null);
 
     const result = validatePaymentForm(values, {
       outstanding: summary.outstanding,
       approvalDate: client.approvalDate,
       today,
+      minimumAmount,
     });
     if (!result.ok) {
       setErrors(result.errors);
@@ -65,8 +74,10 @@ export function PaymentsModal({ clientId, onClose }: PaymentsModalProps) {
         paymentDate: result.value.paymentDate,
         collectorId: user!.uid,
         collectorName: profile?.fullName || 'Admin (web)',
+        notes: notes.trim() || settings.general.defaultPaymentNote,
       });
       setValues({ amount: '', paymentDate: today });
+      setNotes('');
     } catch (caught) {
       setFormError(describeError(caught));
     } finally {
@@ -76,6 +87,9 @@ export function PaymentsModal({ clientId, onClose }: PaymentsModalProps) {
 
   return (
     <Modal title={`Payments — ${formatClientName(client)}`} onClose={onClose} wide>
+      <p className="muted small">{publicClientId(client)} · Transaction {client.transactionNumber || 'Pending'} · Daily payable {formatPeso(dailyPayable(client))}</p>
+      <p className="field-hint">{policyError || policyLoading ? 'The collector policy is being checked or is unavailable. Administrator entries remain available for corrections and settlements.' : settings.payments.enforceDailyMinimum ? profile?.role === 'collector' ? `Collector minimum per receipt: ${formatPeso(minimumAmount)}.` : 'Collector daily minimum is enabled. Administrator entries can record partial payments and final settlements below the minimum.' : 'Daily payable is information only; payments below or above it are allowed within the outstanding balance.'}</p>
+      {policyError && <p className="alert alert-error" role="alert">Payment policy could not be loaded. {policyError}</p>}
       <dl className="summary-grid">
         <div>
           <dt>Principal</dt>
@@ -111,7 +125,7 @@ export function PaymentsModal({ clientId, onClose }: PaymentsModalProps) {
             <input
               type="number"
               inputMode="decimal"
-              min="0"
+              min={minimumAmount || '0.01'}
               step="0.01"
               value={values.amount}
               onChange={(event) => setValues((previous) => ({ ...previous, amount: event.target.value }))}
@@ -125,10 +139,11 @@ export function PaymentsModal({ clientId, onClose }: PaymentsModalProps) {
             />
           </FormField>
           <div className="inline-form-submit">
-            <button type="submit" className="btn btn-primary" disabled={busy}>
+            <button type="submit" className="btn btn-primary" disabled={busy || policyBlocksEntry}>
               {busy ? 'Saving…' : 'Add payment'}
             </button>
           </div>
+          <FormField label="Notes (optional)"><input value={notes} maxLength={500} placeholder={settings.general.defaultPaymentNote} onChange={(event) => setNotes(event.target.value)} /></FormField>
         </form>
       ) : (
         <p className="alert alert-success">This loan is fully paid.</p>
@@ -148,8 +163,10 @@ export function PaymentsModal({ clientId, onClose }: PaymentsModalProps) {
             <thead>
               <tr>
                 <th>Payment date</th>
+                <th>Index day</th>
                 <th className="num">Amount</th>
                 <th>Collector</th>
+                <th>Notes</th>
                 <th>Entered</th>
                 <th className="actions-col">Actions</th>
               </tr>
@@ -158,8 +175,10 @@ export function PaymentsModal({ clientId, onClose }: PaymentsModalProps) {
               {clientPayments.map((payment) => (
                 <tr key={payment.id}>
                   <td>{formatDate(payment.paymentDate)}</td>
+                  <td>{indexEntries(client, clientPayments).find((entry) => entry.date === payment.paymentDate)?.day ?? '—'}</td>
                   <td className="num">{formatPeso(payment.amount)}</td>
                   <td>{payment.collectorName || '—'}</td>
+                  <td>{payment.notes || settings.general.defaultPaymentNote}</td>
                   <td>{formatDateTime(payment.createdAt)}</td>
                   <td className="actions-col">
                     <button type="button" className="btn btn-small btn-danger-outline" onClick={() => setToDelete(payment)}>

@@ -12,6 +12,8 @@ import {
 } from '../../lib/validation';
 import { addClient, updateClient } from '../../services/clients';
 import type { Client } from '../../types';
+import { dailyPayable } from '../../lib/printables';
+import { useSettings } from '../../context/SettingsContext';
 
 interface ClientFormModalProps {
   /** Pass a client to edit it; leave out to add a new one. */
@@ -21,6 +23,7 @@ interface ClientFormModalProps {
 
 export function ClientFormModal({ client, onClose }: ClientFormModalProps) {
   const { today } = useData();
+  const { loading: settingsLoading, error: settingsError } = useSettings();
   const [values, setValues] = useState<ClientFormValues>(() => ({
     lastName: client?.lastName ?? '',
     firstName: client?.firstName ?? '',
@@ -31,6 +34,7 @@ export function ClientFormModal({ client, onClose }: ClientFormModalProps) {
     interest: client ? String(client.interest) : '',
     loanTermDays: client ? String(client.loanTermDays) : String(LOAN_TERMS[0]),
     approvalDate: client?.approvalDate ?? today,
+    dailyAmount: client ? String(dailyPayable(client)) : '',
   }));
   const [errors, setErrors] = useState<FieldErrors<ClientFormValues>>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -72,6 +76,8 @@ export function ClientFormModal({ client, onClose }: ClientFormModalProps) {
   return (
     <Modal title={client ? 'Edit client' : 'Add client'} onClose={onClose} wide>
       <form onSubmit={handleSubmit} noValidate>
+        {client && <p className="muted small">Client ID: {client.clientNumber || client.id} · Transaction: {client.transactionNumber || 'Pending allocation'}</p>}
+        {!client && settingsError && <p className="alert alert-error" role="alert">Client number allocation requires Firebase settings access. {settingsError}</p>}
         <fieldset disabled={busy}>
           <legend>Loaner information</legend>
           <div className="form-grid">
@@ -118,6 +124,10 @@ export function ClientFormModal({ client, onClose }: ClientFormModalProps) {
             <FormField label="Date of approval" error={errors.approvalDate} hint="Day counting starts from this date.">
               <input type="date" {...bind('approvalDate')} />
             </FormField>
+            <FormField label="Daily payable amount (₱)" error={errors.dailyAmount} hint="Saved on the client and used by the print templates.">
+              <input type="number" inputMode="decimal" min="0.01" step="0.01" {...bind('dailyAmount')} />
+            </FormField>
+            <div className="field"><span className="field-hint">Suggested from total ÷ term, rounded up to the nearest centavo.</span><button type="button" className="btn btn-small" onClick={() => setValues((previous) => ({ ...previous, dailyAmount: String(Math.ceil(totalPayable / Number(previous.loanTermDays) * 100) / 100) }))}>Use suggested daily amount</button></div>
           </div>
           <p className="summary-line">
             Total to pay (principal + interest): <strong>{formatPeso(totalPayable)}</strong>
@@ -134,7 +144,7 @@ export function ClientFormModal({ client, onClose }: ClientFormModalProps) {
           <button type="button" className="btn" onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button type="submit" className="btn btn-primary" disabled={busy}>
+          <button type="submit" className="btn btn-primary" disabled={busy || (!client && (settingsLoading || !!settingsError))}>
             {busy ? 'Saving…' : client ? 'Save changes' : 'Add client'}
           </button>
         </div>

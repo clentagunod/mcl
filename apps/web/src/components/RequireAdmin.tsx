@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { DataProvider } from '../context/DataProvider';
 import { Layout } from './Layout';
 import { LoadingState } from './StateMessage';
+import { SettingsProvider } from '../context/SettingsProvider';
 
 /**
  * Route guard: only a signed-in administrator reaches the pages below it.
@@ -15,8 +16,10 @@ export function RequireAdmin() {
   if (status === 'signedOut') return <Navigate to="/login" replace />;
 
   return (
-    <DataProvider>
-      <Layout />
-    </DataProvider>
+    <SettingsProvider>
+      <DataProvider>
+        <Layout />
+      </DataProvider>
+    </SettingsProvider>
   );
 }

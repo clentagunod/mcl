@@ -46,6 +46,7 @@ export interface ClientFormValues {
   interest: string;
   loanTermDays: string;
   approvalDate: string;
+  dailyAmount?: string;
 }
 
 export function validateClientForm(values: ClientFormValues): ValidationResult<ClientFormValues, ClientInput> {
@@ -73,6 +74,8 @@ export function validateClientForm(values: ClientFormValues): ValidationResult<C
   if (!isLoanTerm(loanTermDays)) errors.loanTermDays = 'Choose a loan type.';
 
   if (!isISODate(values.approvalDate)) errors.approvalDate = 'Choose the date of approval.';
+  const dailyAmount = values.dailyAmount === undefined ? undefined : parseMoney(values.dailyAmount);
+  if (dailyAmount !== undefined && (dailyAmount === null || dailyAmount <= 0)) errors.dailyAmount = 'Daily amount must be greater than 0.';
 
   if (
     Object.keys(errors).length > 0 ||
@@ -96,6 +99,7 @@ export function validateClientForm(values: ClientFormValues): ValidationResult<C
       interest,
       loanTermDays,
       approvalDate: values.approvalDate,
+      dailyAmount: dailyAmount ?? Math.ceil(((principal + interest) / loanTermDays) * 100) / 100,
     },
   };
 }
@@ -111,6 +115,7 @@ export interface PaymentFormContext {
   outstanding: number;
   approvalDate: string;
   today: string;
+  minimumAmount?: number;
 }
 
 export function validatePaymentForm(
@@ -122,6 +127,7 @@ export function validatePaymentForm(
   const amount = parseMoney(values.amount);
   if (amount === null || amount <= 0) errors.amount = 'Amount must be greater than 0.';
   else if (amount > context.outstanding) errors.amount = 'Amount is more than the outstanding balance.';
+  else if (context.minimumAmount && amount < context.minimumAmount) errors.amount = `Collector payments must be at least PHP ${context.minimumAmount.toFixed(2)}. Ask an administrator to record a smaller partial payment or final settlement.`;
 
   if (!isISODate(values.paymentDate)) errors.paymentDate = 'Choose the payment date.';
   else if (values.paymentDate > context.today) errors.paymentDate = 'Payment date cannot be in the future.';
