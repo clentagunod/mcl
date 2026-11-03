@@ -4,6 +4,10 @@ import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.os.Bundle
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.Uri
 import android.webkit.*
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -21,6 +25,63 @@ import java.io.ByteArrayInputStream
 /** Hosts only the APK's bundled interface; Firebase traffic uses the web SDK over HTTPS. */
 class MainActivity : ComponentActivity() {
     private var browser: WebView? = null
+    private val connectivity by lazy { getSystemService(ConnectivityManager::class.java) }
+    private var defaultNetwork: Network? = null
+    private var validatedInternet: Boolean? = null
+    private var networkCallbackRegistered = false
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            runOnUiThread { if (networkCallbackRegistered) defaultNetwork = network }
+        }
+        override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+            val online = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            runOnUiThread {
+                if (networkCallbackRegistered && network == defaultNetwork) publishConnectivity(online)
+            }
+        }
+        override fun onLost(network: Network) {
+            runOnUiThread {
+                if (networkCallbackRegistered && network == defaultNetwork) {
+                    defaultNetwork = null
+                    publishConnectivity(false)
+                }
+            }
+        }
+    }
+
+    // One-way status delivery only: JavaScript receives no native callable interface.
+    private fun publishConnectivity(online: Boolean?) {
+        validatedInternet = online
+        val view = browser ?: return
+        val uri = view.url?.let(Uri::parse) ?: return
+        if (uri.scheme != "https" || uri.host != HOST || uri.path?.startsWith("/assets/mobile/") != true) return
+        val value = online?.toString() ?: "null"
+        view.evaluateJavascript(
+            "window.__mclNetworkOnline = $value; window.dispatchEvent(new Event('mcl:connectivity'));",
+            null
+        )
+    }
+
+    override fun onStart() {
+        super.onStart()
+        runCatching {
+            defaultNetwork = connectivity.activeNetwork
+            val capabilities = defaultNetwork?.let(connectivity::getNetworkCapabilities)
+            publishConnectivity(capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED))
+            connectivity.registerDefaultNetworkCallback(networkCallback)
+            networkCallbackRegistered = true
+        }.onFailure { publishConnectivity(null) }
+    }
+
+    override fun onStop() {
+        if (networkCallbackRegistered) {
+            networkCallbackRegistered = false
+            runCatching { connectivity.unregisterNetworkCallback(networkCallback) }
+        }
+        super.onStop()
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -70,6 +131,9 @@ class MainActivity : ComponentActivity() {
                                             runCatching { startActivity(Intent(Intent.ACTION_VIEW, uri)) }
                                         }
                                         return true
+                                    }
+                                    override fun onPageFinished(view: WebView, url: String?) {
+                                        publishConnectivity(validatedInternet)
                                     }
                                     override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
                                         canGoBack = view.canGoBack()

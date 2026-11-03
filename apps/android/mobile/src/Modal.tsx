@@ -1,4 +1,6 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { OfflineNotice } from './Status';
+import { networkOnline } from './connectivity';
 import { createPortal } from 'react-dom';
 
 let openDialogs = 0;
@@ -46,9 +48,14 @@ export function Modal({ title, onClose, children, wide = false }: {
   return createPortal(
     <div className="mcl-dialog-backdrop" onClick={event => { if (event.target === event.currentTarget) close.current(); }}>
       <div ref={panel} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}
+        onSubmitCapture={event => {
+          if (!networkOnline()) { event.preventDefault(); event.stopPropagation(); }
+        }}
         className={wide ? 'mcl-dialog-panel mcl-dialog-wide' : 'mcl-dialog-panel'}>
-        <header className="mcl-dialog-header"><h2 id={titleId}>{title}</h2><button type="button" className="btn btn-ghost" aria-label="Close" onClick={() => close.current()}>✕</button></header>
-        <div className="mcl-dialog-content">{children}</div>
+        <header className="mcl-dialog-header"><h2 id={titleId}>{title}</h2><div className="dialog-header-actions"><button type="button" className="btn btn-ghost" aria-label="Close" onClick={() => close.current()}>✕</button></div></header>
+        <div className="mcl-dialog-content"><OfflineNotice form />
+          {children}
+        </div>
       </div>
     </div>, document.body);
 }

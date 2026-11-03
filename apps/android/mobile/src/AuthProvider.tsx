@@ -5,8 +5,11 @@ import { auth, db } from '@web/config/firebase';
 import { AuthContext, type AuthContextValue } from '@web/context/AuthContext';
 import { userFromDoc } from '@web/services/converters';
 import { describeError } from '@web/lib/errors';
+import { watchReconnect } from './connectivity';
+import { refreshSessionData } from './refreshSession';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  useEffect(() => watchReconnect(refreshSessionData), []);
   const [state, setState] = useState<Pick<AuthContextValue, 'status' | 'user' | 'profile' | 'accessError'>>({
     status: 'loading', user: null, profile: null, accessError: null,
   });

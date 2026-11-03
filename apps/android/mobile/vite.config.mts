@@ -8,6 +8,8 @@ export default {
     enforce: 'pre' as const,
     resolveId(id: string) {
       if (/(^|\/)Modal(?:\.tsx)?$/.test(id)) return path('./src/Modal.tsx');
+      if (/(^|\/)StateMessage(?:\.tsx)?$/.test(id)) return path('./src/StateMessage.tsx');
+      if (/(^|\/)ConfirmDialog(?:\.tsx)?$/.test(id)) return path('./src/ConfirmDialog.tsx');
     },
   }],
   envDir: path('../../web'),

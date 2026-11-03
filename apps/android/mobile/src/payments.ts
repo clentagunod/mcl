@@ -5,16 +5,22 @@ import { dailyPayable } from '@web/lib/printables';
 import { isISODate } from '@web/lib/dates';
 import { clientFromDoc } from '@web/services/converters';
 import { assertCycle, cycleId, PaymentValidationError } from './loanCycle';
+import { receiptBackendEnabled, writeServerReceipt } from '@web/services/receipt-backend';
+import { isMoney } from '@web/lib/money';
 export function parseAmount(value: string) {
   if (!/^\d+(\.\d{1,2})?$/.test(value)) throw new PaymentValidationError('Enter a positive amount with at most two decimal places.');
   const amount = Number(value);
-  if (amount <= 0 || !Number.isSafeInteger(Math.round(amount * 100))) throw new PaymentValidationError('Amount is outside the supported range.');
+  if (!isMoney(amount) || amount <= 0) throw new PaymentValidationError('Amount is outside the supported range.');
   return amount;
 }
-export async function saveReceipt(id: string, input: PaymentInput, previous?: Payment) {
+export async function saveReceipt(id: string, input: PaymentInput, previous?: Payment, operationId = id) {
   input = { ...input, loanId: cycleId(input.loanId) };
   parseAmount(String(input.amount));
   if (!isISODate(input.paymentDate) || (input.notes?.length ?? 0) > 1500) throw new PaymentValidationError('Check the collection date and notes.');
+  if (receiptBackendEnabled) {
+    await writeServerReceipt(previous ? 'correct' : 'create', id, operationId, input, previous);
+    return;
+  }
   const records = await getDocsFromServer(query(collection(db, 'payments'), where('clientId', '==', input.clientId)));
   await runTransaction(db, async tx => {
     const ref = doc(db, 'payments', id);

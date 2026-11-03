@@ -12,8 +12,8 @@ import { subscribeHolidays } from '@web/services/holidays';
 import { buildClientRows } from '@web/lib/loan';
 import { describeError } from '@web/lib/errors';
 import { normalizeClient, normalizePayment } from './loanCycle';
-const clientsFeed: typeof subscribeClients = (data, error) => subscribeClients(values => data(values.map(normalizeClient)), error);
-const paymentsFeed: typeof subscribePayments = (data, error) => subscribePayments(values => data(values.map(normalizePayment)), error);
+const clientsFeed: typeof subscribeClients = (data, error) => subscribeClients((values, metadata) => data(values.map(normalizeClient), metadata), error);
+const paymentsFeed: typeof subscribePayments = (data, error) => subscribePayments((values, metadata) => data(values.map(normalizePayment), metadata), error);
 export function CollectorData({ children }: { children: ReactNode }) {
   const clients = useSubscription(clientsFeed);
   const payments = useSubscription(paymentsFeed);
@@ -27,7 +27,8 @@ export function CollectorData({ children }: { children: ReactNode }) {
   const rows = useMemo(() => buildClientRows(clients.data, payments.data, new Set(holidays.data.map(h => h.date)), today), [clients.data, payments.data, holidays.data, today]);
   return <SettingsContext.Provider value={{ settings: { ...DEFAULT_SETTINGS, payments: { enforceDailyMinimum: policy.enforce } }, loading: policy.loading, error: policy.error }}>
     <DataContext.Provider value={{ clients: clients.data, payments: payments.data, holidays: holidays.data, collectors: [], rows, today,
-      loading: clients.loading || payments.loading || holidays.loading, error: clients.error ?? payments.error ?? holidays.error }}>
+      loading: clients.loading || payments.loading || holidays.loading, error: clients.error ?? payments.error ?? holidays.error
+        ?? (clients.fresh && payments.fresh && holidays.fresh ? null : 'Displayed records are awaiting server confirmation. Connect to confirm live balances.') }}>
       {children}
     </DataContext.Provider>
   </SettingsContext.Provider>;
