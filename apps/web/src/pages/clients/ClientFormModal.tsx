@@ -22,6 +22,7 @@ interface ClientFormModalProps {
 }
 
 export function ClientFormModal({ client, onClose }: ClientFormModalProps) {
+  const [openedClient] = useState(client);
   const { today } = useData();
   const { loading: settingsLoading, error: settingsError } = useSettings();
   const [values, setValues] = useState<ClientFormValues>(() => ({
@@ -64,7 +65,7 @@ export function ClientFormModal({ client, onClose }: ClientFormModalProps) {
 
     setBusy(true);
     try {
-      if (client) await updateClient(client.id, result.value);
+      if (openedClient) await updateClient(openedClient.id, result.value, openedClient);
       else await addClient(result.value);
       onClose();
     } catch (caught) {

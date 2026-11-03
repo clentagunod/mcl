@@ -3,6 +3,13 @@ const pesoFormatter = new Intl.NumberFormat('en-PH', {
   currency: 'PHP',
 });
 
+// Matches the supported renewal range and leaves exact integer centavo headroom.
+export const MAX_MONEY = 999_999_999;
+export function isMoney(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    && value <= MAX_MONEY && Math.round(value * 100) / 100 === value;
+}
+
 /** 11250 -> "₱11,250.00" */
 export function formatPeso(amount: number): string {
   return pesoFormatter.format(amount);

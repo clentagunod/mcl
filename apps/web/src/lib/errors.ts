@@ -21,7 +21,7 @@ const MESSAGES: Record<string, string> = {
 export function describeError(error: unknown): string {
   if (error instanceof FirebaseError) {
     if (['functions/failed-precondition', 'functions/invalid-argument', 'functions/permission-denied', 'functions/resource-exhausted', 'functions/not-found'].includes(error.code)) return error.message;
-    if (error.code.startsWith('functions/')) return 'The renewal service is unavailable. Check your connection and confirm that the renewal function is deployed, then retry.';
+    if (error.code.startsWith('functions/')) return 'The server could not confirm this action. Check your connection and retry. If this continues, contact an administrator.';
     return MESSAGES[error.code] ?? `Something went wrong (${error.code}).`;
   }
   if (error instanceof Error) return error.message;

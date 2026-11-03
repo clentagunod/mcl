@@ -7,7 +7,6 @@ import {
   query,
   runTransaction,
   serverTimestamp,
-  updateDoc,
   where,
   writeBatch,
 } from 'firebase/firestore';
@@ -18,6 +17,7 @@ import { subscribeToQuery, type Subscribe } from './subscribe';
 import { DEFAULT_SETTINGS, mergeSettings } from '../config/settings';
 import { formatSequence } from '../lib/identifiers';
 import { dailyPayable } from '../lib/printables';
+import { loanId } from '../lib/loan-cycle';
 
 const clientsCollection = collection(db, 'clients');
 const paymentsCollection = collection(db, 'payments');
@@ -96,10 +96,19 @@ export async function completeClientRecords(clients: readonly Client[]): Promise
   }
 }
 
-export async function updateClient(id: string, input: ClientInput): Promise<void> {
-  await updateDoc(doc(clientsCollection, id), {
-    ...input,
-    updatedAt: serverTimestamp(),
+export async function updateClient(id: string, input: ClientInput, expected: Client): Promise<void> {
+  await runTransaction(db, async (transaction) => {
+    const ref = doc(clientsCollection, id);
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists()) throw new Error('This client no longer exists.');
+    const current = clientFromDoc(snapshot);
+    // Compare fields as well as the timestamp: legacy records may lack updatedAt,
+    // and older import tools may not advance it when they change a loan.
+    const fields = ['firstName', 'middleName', 'lastName', 'address', 'cellphone', 'principal', 'interest', 'loanTermDays', 'approvalDate', 'dailyAmount', 'transactionNumber', 'renewalCount', 'revision'] as const;
+    if (loanId(current) !== loanId(expected) || fields.some((key) => current[key] !== expected[key])) {
+      throw new Error('This client changed in another session. Close and reopen Edit before saving.');
+    }
+    transaction.update(ref, { ...input, updatedAt: serverTimestamp() });
   });
 }
 

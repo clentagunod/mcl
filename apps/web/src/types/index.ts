@@ -16,6 +16,8 @@ export interface Client {
   /** Unique, zero-padded five digit loan transaction number. */
   transactionNumber?: string;
   dailyAmount?: number;
+  /** Exact Firestore update token captured when opening an editor. */
+  revision?: string;
   lastName: string;
   firstName: string;
   middleName: string;
@@ -31,7 +33,7 @@ export interface Client {
 }
 
 /** The fields an admin supplies when adding or editing a client. */
-export type ClientInput = Omit<Client, 'id' | 'clientNumber' | 'transactionNumber' | 'activeLoanId' | 'renewalCount' | 'originalTransactionNumber'>;
+export type ClientInput = Omit<Client, 'id' | 'clientNumber' | 'transactionNumber' | 'activeLoanId' | 'renewalCount' | 'originalTransactionNumber' | 'revision'>;
 
 /** A principal repayment entered by a collector (or an admin). */
 export interface Payment {

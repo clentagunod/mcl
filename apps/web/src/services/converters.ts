@@ -1,5 +1,7 @@
 import { Timestamp, type DocumentData, type QueryDocumentSnapshot } from 'firebase/firestore';
 import { LOAN_TERMS } from '../config/app';
+import { isMoney } from '../lib/money';
+import { isISODate } from '../lib/dates';
 import type { Client, Holiday, LoanTermDays, Payment, UserProfile, UserRole } from '../types';
 
 /**
@@ -30,8 +32,13 @@ function read(snapshot: QueryDocumentSnapshot): DocumentData {
 
 export function clientFromDoc(snapshot: QueryDocumentSnapshot): Client {
   const data = read(snapshot);
+  if (!isMoney(data.principal) || data.principal <= 0 || !isMoney(data.interest)
+    || !isISODate(data.approvalDate) || !(LOAN_TERMS as readonly unknown[]).includes(data.loanTermDays)) {
+    throw new Error(`Client ${snapshot.id} has invalid loan details. An administrator must repair the source record.`);
+  }
   return {
     id: snapshot.id,
+    revision: data.updatedAt instanceof Timestamp ? `${data.updatedAt.seconds}:${data.updatedAt.nanoseconds}` : undefined,
     activeLoanId: text(data.activeLoanId) || undefined,
     renewalCount: amount(data.renewalCount),
     originalTransactionNumber: text(data.originalTransactionNumber) || undefined,
@@ -53,6 +60,9 @@ export function clientFromDoc(snapshot: QueryDocumentSnapshot): Client {
 
 export function paymentFromDoc(snapshot: QueryDocumentSnapshot): Payment {
   const data = read(snapshot);
+  if (!isMoney(data.amount) || data.amount <= 0 || !isISODate(data.paymentDate) || !text(data.clientId)) {
+    throw new Error(`Payment ${snapshot.id} has invalid financial details. An administrator must repair the source record.`);
+  }
   return {
     id: snapshot.id,
     loanId: text(data.loanId) || undefined,

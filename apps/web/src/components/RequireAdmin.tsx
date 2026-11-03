@@ -10,13 +10,13 @@ import { SettingsProvider } from '../context/SettingsProvider';
  * The live data feeds start only after sign-in, so nothing is read before then.
  */
 export function RequireAdmin() {
-  const { status } = useAuth();
+  const { status, user } = useAuth();
 
   if (status === 'loading') return <LoadingState />;
   if (status === 'signedOut') return <Navigate to="/login" replace />;
 
   return (
-    <SettingsProvider>
+    <SettingsProvider key={user!.uid}>
       <DataProvider>
         <Layout />
       </DataProvider>

@@ -16,7 +16,7 @@ vi.mock('firebase/firestore', () => ({
         get: async (ref: { path: string }) => {
           if (writing) throw new Error('Read after write');
           const data = fake.documents.get(ref.path);
-          return { exists: () => !!data, data: () => data ? structuredClone(data) : undefined };
+          return { id: ref.path.split('/').at(-1), exists: () => !!data, data: () => data ? structuredClone(data) : undefined };
         },
         set: put,
         update: (ref: { path: string }, data: Record<string, unknown>) => put(ref, { ...fake.documents.get(ref.path), ...data }),
@@ -26,16 +26,35 @@ vi.mock('firebase/firestore', () => ({
     fake.queue = promise.catch(() => {});
     return promise;
   },
-  serverTimestamp: () => 'SERVER_TIMESTAMP',
+  serverTimestamp: () => 'SERVER_TIMESTAMP', Timestamp: class {},
   onSnapshot: vi.fn(), deleteDoc: vi.fn(), getDocs: vi.fn(), query: vi.fn(), updateDoc: vi.fn(), where: vi.fn(), writeBatch: vi.fn(),
 }));
 
-import { addClient, completeClientRecords } from './clients';
+import { addClient, completeClientRecords, updateClient } from './clients';
+import { clientFromDoc } from './converters';
 import { initializeSettings, saveSettings } from './settings';
 import { DEFAULT_SETTINGS } from '../config/settings';
 
 const input: ClientInput = { firstName: 'Juan', lastName: 'Dela Cruz', middleName: '', address: 'San Miguel', cellphone: '09170000000', principal: 10000, interest: 1250, loanTermDays: 45, approvalDate: '2026-11-02', dailyAmount: 250 };
 beforeEach(() => { fake.documents.clear(); fake.writes = []; fake.queue = Promise.resolve(); });
+
+function clientSnapshot() {
+  return clientFromDoc({ id: 'c', data: () => fake.documents.get('clients/c') } as Parameters<typeof clientFromDoc>[0]);
+}
+describe('stale client editor protection', () => {
+  it('saves current edits but rejects a second editor with stale fields on a legacy record', async () => {
+    fake.documents.set('clients/c', { ...input }); const opened = clientSnapshot();
+    await updateClient('c', { ...input, address: 'Changed' }, opened);
+    await expect(updateClient('c', input, opened)).rejects.toThrow('another session');
+    expect(fake.documents.get('clients/c')?.address).toBe('Changed');
+  });
+  it('rejects an old form after renewal without changing the renewed terms', async () => {
+    fake.documents.set('clients/c', { ...input }); const opened = clientSnapshot();
+    fake.documents.set('clients/c', { ...input, activeLoanId: '00002', renewalCount: 1, principal: 20000 });
+    await expect(updateClient('c', input, opened)).rejects.toThrow('another session');
+    expect(fake.documents.get('clients/c')?.principal).toBe(20000); expect(fake.writes).toEqual([]);
+  });
+});
 
 describe('client allocations', () => {
   it('creates formatted Firestore document IDs and persistent, unique five digit transaction numbers', async () => {

@@ -16,7 +16,8 @@ beforeEach(async () => {
       setDoc(doc(db, 'users/admin'), { role: 'admin', fullName: 'Admin' }),
       setDoc(doc(db, 'users/collector'), { role: 'collector', active: true, fullName: 'Collector' }),
       setDoc(doc(db, 'users/inactive'), { role: 'collector', active: false }),
-      setDoc(doc(db, 'clients/mcl0001'), { principal: 10000, interest: 1250, loanTermDays: 45, dailyAmount: 250 }),
+      setDoc(doc(db, 'users/inactive-admin'), { role: 'admin', active: false }),
+      setDoc(doc(db, 'clients/mcl0001'), { principal: 10000, interest: 1250, loanTermDays: 45, dailyAmount: 250, approvalDate: '2026-11-01' }),
       setDoc(doc(db, 'settings/Configurations/elements/counters'), { clientSequence: 1, transactionSequence: 1 }),
       setDoc(doc(db, policyPath), { enforceDailyMinimum: false }),
     ]);
@@ -68,10 +69,56 @@ test('collectors may read the policy document, but cannot list other settings or
   await assertFails(updateDoc(doc(db, 'clients/mcl0001'), { dailyAmount: 1 }));
 });
 test('inactive and unauthenticated users cannot read policy or record payments', async () => {
-  for (const db of [as('inactive'), environment.unauthenticatedContext().firestore()]) {
+  for (const db of [as('inactive'), as('inactive-admin'), environment.unauthenticatedContext().firestore()]) {
     await assertFails(getDoc(doc(db, policyPath)));
     await assertFails(write(db, 250));
   }
+});
+
+test('inactive admins cannot access data, edit loans, or change roles and settings', async () => {
+  const db = as('inactive-admin');
+  await assertFails(getDocs(collection(db, 'clients')));
+  await assertFails(updateDoc(doc(db, 'clients/mcl0001'), { principal: 1 }));
+  await assertFails(updateDoc(doc(db, 'users/collector'), { active: false }));
+  await assertFails(updateDoc(doc(db, policyPath), { enforceDailyMinimum: true }));
+  await assertSucceeds(getDoc(doc(db, 'users/inactive-admin')));
+});
+
+test('both roles reject nonfinite, unsupported, or fractional-centavo receipt amounts', async () => {
+  for (const uid of ['admin', 'collector']) {
+    for (const amount of [Infinity, NaN, 0.001, 1000000000]) await assertFails(write(as(uid), amount));
+    for (const amount of [0.01, 0.29, 193.97, 123456789.12]) await assertSucceeds(write(as(uid), amount));
+  }
+});
+
+test('both roles reject impossible, future, and preapproval receipt dates', async () => {
+  for (const uid of ['admin', 'collector']) {
+    for (const paymentDate of ['2026-99-99', '2026-02-30', '2099-01-01', '2026-10-31', 'abcdefghij']) {
+      await assertFails(write(as(uid), 1, { paymentDate }));
+    }
+    await assertSucceeds(write(as(uid), 1, { paymentDate: '2026-11-01' }));
+  }
+});
+
+test('collector display attribution matches the authenticated profile', async () => {
+  await assertFails(write(as('collector'), 250, { collectorName: 'Another person' }));
+  await assertSucceeds(write(as('collector'), 250));
+});
+
+test('backend-only receipt gate closes direct admin and collector mutations; audit events are immutable', async () => {
+  await assertSucceeds(write(as('admin'), 250));
+  await setDoc(doc(as('admin'), 'settings/Configurations/elements/receiptPolicy'), { backendOnly: true });
+  for (const uid of ['admin', 'collector']) await assertFails(write(as(uid), 250));
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'payments/existing'), payment(250));
+    await setDoc(doc(context.firestore(), 'receiptAudit/entry'), { actorId: 'admin' });
+  });
+  await assertFails(updateDoc(doc(as('admin'), 'payments/existing'), { amount: 100 }));
+  await assertFails(deleteDoc(doc(as('admin'), 'payments/existing')));
+  await assertSucceeds(getDoc(doc(as('admin'), 'receiptAudit/entry')));
+  await assertFails(getDoc(doc(as('collector'), 'receiptAudit/entry')));
+  await assertFails(updateDoc(doc(as('admin'), 'receiptAudit/entry'), { actorId: 'other' }));
+  await assertFails(deleteDoc(doc(as('admin'), 'receiptAudit/entry')));
 });
 test('required receipt validation and collector ownership remain enforced', async () => {
   const db = as('collector');

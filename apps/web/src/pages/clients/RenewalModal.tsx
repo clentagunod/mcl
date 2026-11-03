@@ -79,7 +79,7 @@ export function RenewalHistoryModal({ clientId, onClose }: { clientId: string; o
 }
 
 export function RenewalModal({ clientId, onClose }: { clientId: string; onClose: () => void }) {
-  const { clients, payments, holidays, today } = useData();
+  const { clients, payments, holidays, today, loading: dataLoading, error: dataError } = useData();
   const { profile } = useAuth();
   const client = clients.find((c) => c.id === clientId);
   const history = useRenewalHistory(client);
@@ -92,7 +92,7 @@ export function RenewalModal({ clientId, onClose }: { clientId: string; onClose:
   if (!client || profile?.role !== 'admin') return null;
   const eligibility = renewalEligibility(client, payments, new Set(holidays.map((h) => h.date)), today);
   const loanChanged = loanId(client) !== openedLoanId;
-  const ready = !loanChanged && eligibility.eligible && !history.loading && !history.error && history.records.length === (client.renewalCount || 0) && hasGoodRenewalHistory(history.records);
+  const ready = !dataLoading && !dataError && !loanChanged && eligibility.eligible && !history.loading && !history.error && history.records.length === (client.renewalCount || 0) && hasGoodRenewalHistory(history.records);
   const bind = (key: keyof typeof values) => ({ value: values[key], onChange: (event: { target: { value: string } }) => { setValues((old) => ({ ...old, [key]: event.target.value })); setApproved(false); } });
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -106,6 +106,7 @@ export function RenewalModal({ clientId, onClose }: { clientId: string; onClose:
     } catch (caught) { setError(describeError(caught)); setBusy(false); }
   }
   return <Modal title={`Renew loan — ${formatClientName(client)}`} onClose={() => { if (!busy) onClose(); }} wide>
+    {dataError && <p className="alert alert-error" role="alert">{dataError}</p>}
     <p>Client {client.clientNumber || client.id} · Closing transaction {client.transactionNumber}</p>
     {loanChanged && <p className="alert alert-error" role="alert">This loan was renewed in another session. Close and reopen this form to review the current loan.</p>}
     <p className={ready ? 'alert alert-success' : 'alert alert-error'}>{eligibility.reason} {eligibility.paidOn && `Settled ${formatDate(eligibility.paidOn)} · Due ${formatDate(eligibility.dueDate)}.`}</p>

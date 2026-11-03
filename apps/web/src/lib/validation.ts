@@ -1,7 +1,7 @@
 import { COLLECTOR_MIN_PASSWORD_LENGTH, LOAN_TERMS } from '../config/app';
 import type { ClientInput, LoanTermDays } from '../types';
 import { isISODate } from './dates';
-import { round2 } from './money';
+import { isMoney, round2 } from './money';
 
 export type FieldErrors<T> = Partial<Record<keyof T, string>>;
 
@@ -27,7 +27,8 @@ export function normalizeCellphone(value: string): string | null {
 export function parseMoney(value: string): number | null {
   if (value.trim() === '') return null;
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? round2(parsed) : null;
+  const rounded = round2(parsed);
+  return isMoney(rounded) ? rounded : null;
 }
 
 function isLoanTerm(value: number): value is LoanTermDays {

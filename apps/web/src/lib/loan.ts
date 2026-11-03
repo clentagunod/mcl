@@ -1,6 +1,6 @@
 import { COUNT_APPROVAL_DATE_AS_DAY_ONE } from '../config/app';
 import type { Client, LoanStatus, Payment } from '../types';
-import { addDays, isSunday, type ISODate } from './dates';
+import { addDays, isISODate, isSunday, type ISODate } from './dates';
 import { round2, sumAmounts } from './money';
 import { isCurrentLoanPayment } from './loan-cycle';
 
@@ -30,6 +30,9 @@ export function computeSchedule(
   today: ISODate,
   countApprovalDate: boolean = COUNT_APPROVAL_DATE_AS_DAY_ONE,
 ): LoanSchedule {
+  if (!isISODate(approvalDate) || !Number.isInteger(termDays) || termDays <= 0 || termDays > MAX_SCAN_DAYS) {
+    throw new Error('Invalid loan approval date or term. An administrator must correct the loan details.');
+  }
   let cursor = countApprovalDate ? addDays(approvalDate, -1) : approvalDate;
   let counted = 0;
   let daysElapsed = 0;

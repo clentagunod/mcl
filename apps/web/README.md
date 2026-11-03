@@ -46,7 +46,14 @@ npm run typecheck
 npm run build      # production build in dist/
 ```
 
-Deploy (optional): `firebase deploy --only hosting` (uses `firebase.json`; serves `dist/`).
+Build first, then deploy from `apps/web` with
+`npx firebase-tools deploy --only hosting --config firebase.print-studio.json --project YOUR_PROJECT_ID`.
+The configuration serves `dist/`, supports refreshed SPA routes, revalidates HTML/logo assets,
+and caches hashed JS/CSS/document assets. Deployment is a separate approval step.
+
+Read the [receipt rollout guide](./docs/receipt-rollout.md) before enabling the new
+transactional receipt backend. Keep `VITE_RECEIPT_BACKEND` unset until the callable is deployed
+and tested. Existing builds continue using the legacy write path until the coordinated rollout.
 
 ## 3. Business rules (all in `src/lib/loan.ts`, covered by tests)
 

@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "description": "MCL Dashboard - lending admin web app",
   "scripts": {
-    "test": "vitest run",
+    "test": "node scripts/sync-firestore-rules.mjs --check && vitest run",
+    "sync:rules": "node scripts/sync-firestore-rules.mjs",
     "test:rules": "node scripts/test-firestore-rules.mjs",
     "test:renewals": "npm --prefix functions run build && node scripts/test-firestore-rules.mjs --renewals",
     "dev": "vite",

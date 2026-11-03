@@ -25,7 +25,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [completionError, setCompletionError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (clients.loading || clients.error || settingsState.loading || settingsState.error || completed.current) return;
+    if (!clients.fresh || clients.loading || clients.error || settingsState.loading || settingsState.error || completed.current) return;
     completed.current = true;
     void completeClientRecords(clients.data).catch((error) => setCompletionError(`Client record update: ${describeError(error)} Retry in Settings.`));
   }, [clients, settingsState]);
@@ -50,7 +50,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       rows,
       today,
       loading: clients.loading || payments.loading || collectors.loading || holidays.loading,
-      error: clients.error ?? payments.error ?? collectors.error ?? holidays.error ?? completionError,
+      error: clients.error ?? payments.error ?? collectors.error ?? holidays.error ?? completionError
+        ?? (clients.fresh && payments.fresh && collectors.fresh && holidays.fresh ? null : 'Displayed records are awaiting server confirmation. Payment entry and renewals require confirmed live data.'),
     }),
     [clients, payments, collectors, holidays, rows, today, completionError],
   );

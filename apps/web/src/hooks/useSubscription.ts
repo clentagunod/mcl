@@ -6,6 +6,7 @@ interface SubscriptionState<T> {
   data: T[];
   loading: boolean;
   error: string | null;
+  fresh: boolean;
 }
 
 /**
@@ -13,12 +14,12 @@ interface SubscriptionState<T> {
  * `subscribe` must be a stable reference (the service functions are module-level constants).
  */
 export function useSubscription<T>(subscribe: Subscribe<T>): SubscriptionState<T> {
-  const [state, setState] = useState<SubscriptionState<T>>({ data: [], loading: true, error: null });
+  const [state, setState] = useState<SubscriptionState<T>>({ data: [], loading: true, error: null, fresh: false });
 
   useEffect(() => {
     return subscribe(
-      (data) => setState({ data, loading: false, error: null }),
-      (error) => setState((previous) => ({ ...previous, loading: false, error: describeError(error) })),
+      (data, metadata) => setState({ data, loading: false, error: null, fresh: !metadata?.fromCache && !metadata?.hasPendingWrites }),
+      (error) => setState((previous) => ({ ...previous, loading: false, fresh: false, error: describeError(error) })),
     );
   }, [subscribe]);
 
