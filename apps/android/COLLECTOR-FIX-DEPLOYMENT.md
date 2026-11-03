@@ -1,3 +1,5 @@
+> Renewal integration supersedes the permission and retry guidance below. Read [RENEWALS.md](./RENEWALS.md) first. Current web rules make collector history read-only, preserve closed loan receipts, and require captured loan IDs. Do not deploy an obsolete pre-renewal rules file.
+
 # Collector payment edits
 
 Install the rebuilt app/build/outputs/apk/debug/app-debug.apk.

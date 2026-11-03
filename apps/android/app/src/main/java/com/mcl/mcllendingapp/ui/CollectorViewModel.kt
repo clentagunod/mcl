@@ -110,6 +110,7 @@ class CollectorViewModel(private val repository: CollectorRepository) : ViewMode
         viewModelScope.launch {
             try {
                 val balance = repository.balance(clientId)
+                require(mutableState.value.payment?.client?.activeLoanId == balance.activeLoanId) { "This loan was renewed. Reopen the payment form." }
                 mutableState.update { state ->
                     if (state.payment?.client?.id == clientId)
                         state.copy(payment = state.payment.copy(balance = balance, loading = false, error = null))
@@ -152,7 +153,7 @@ class CollectorViewModel(private val repository: CollectorRepository) : ViewMode
         mutableState.update { it.copy(payment = payment.copy(saving = true, submitted = true, error = null)) }
         viewModelScope.launch {
             try {
-                repository.savePayment(payment.receiptId, payment.client.id, amount, payment.date)
+                repository.savePayment(payment.receiptId, payment.client.id, amount, payment.date, payment.client.activeLoanId)
                 if (mutableState.value.collector?.uid != uid) return@launch
                 // Commit was acknowledged: show the new balance even if the next read fails.
                 val updated = payment.balance.copy(totalPaid = payment.balance.totalPaid + amount,

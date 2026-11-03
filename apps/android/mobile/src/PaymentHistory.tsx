@@ -12,15 +12,15 @@ export function PaymentHistory({ client, onSelect, onClose }: {
   const receipts = payments
     .filter(payment => payment.clientId === client.id && payment.collectorId === user?.uid)
     .sort((a, b) => b.paymentDate.localeCompare(a.paymentDate) || b.id.localeCompare(a.id));
-  return <Modal title="Edit payment" onClose={onClose}>
+  return <Modal title="Payment history" onClose={onClose}>
     <h3>{client.lastName}, {client.firstName}</h3>
-    <p className="muted small">Choose one of your saved payments to edit its amount, collection date or notes.</p>
+    <p className="muted small">Your receipts are preserved across loans. Saved corrections require an administrator.</p>
     {loading && <p role="status">Loading payments…</p>}
     {error && <p className="alert alert-error" role="alert">{error}</p>}
     {!loading && !error && !receipts.length && <p>You have no saved payments for this client.</p>}
     {receipts.map(receipt => <div className="receipt-line" key={receipt.id}>
-      <span>{receipt.paymentDate} · {formatPeso(receipt.amount)}<small>{receipt.notes || 'No notes'}</small></span>
-      <button className="btn btn-primary" disabled={loading || !!error} onClick={() => onSelect(receipt)}>Edit</button>
+      <span>{receipt.paymentDate} · {formatPeso(receipt.amount)}<small>Loan {receipt.loanId || 'initial'} · {receipt.notes || 'No notes'}</small></span>
+
     </div>)}
   </Modal>;
 }

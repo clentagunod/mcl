@@ -11,7 +11,8 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 
 data class Collector(val uid: String, val fullName: String)
-data class Client(val id: String, val firstName: String, val middleName: String, val lastName: String) {
+data class Client(val id: String, val firstName: String, val middleName: String, val lastName: String,
+    val activeLoanId: String = "initial", val renewalCount: Long = 0, val transactionNumber: String = "") {
     val displayName: String get() = listOf(firstName, middleName, lastName).filter { it.isNotBlank() }.joinToString(" ")
     fun matches(query: String): Boolean = query.trim().split(Regex("\\s+")).all {
         displayName.contains(it, ignoreCase = true)
@@ -31,7 +32,7 @@ interface CollectorRepository {
     fun signOut()
     suspend fun clients(): List<Client>
     suspend fun balance(clientId: String): LoanBalance
-    suspend fun savePayment(id: String, clientId: String, amount: java.math.BigDecimal, date: String)
+    suspend fun savePayment(id: String, clientId: String, amount: java.math.BigDecimal, date: String, loanId: String = "initial")
 }
 
 /** Uses the web app's default database and collections; never writes client records. */
@@ -41,8 +42,8 @@ class FirebaseCollectorRepository(
 ) : CollectorRepository {
     private val payments = FirebasePayments(db, auth)
     override suspend fun balance(clientId: String) = payments.balance(clientId)
-    override suspend fun savePayment(id: String, clientId: String, amount: java.math.BigDecimal, date: String) =
-        payments.save(id, clientId, amount, date)
+    override suspend fun savePayment(id: String, clientId: String, amount: java.math.BigDecimal, date: String, loanId: String) =
+        payments.save(id, clientId, amount, date, loanId)
 
     override fun sessions(): Flow<Session> = callbackFlow {
         var profileListener: com.google.firebase.firestore.ListenerRegistration? = null
@@ -85,7 +86,9 @@ class FirebaseCollectorRepository(
     override suspend fun clients(): List<Client> =
         db.collection("clients").get(Source.SERVER).await().documents.map { doc ->
             Client(doc.id, doc.getString("firstName").orEmpty(),
-                doc.getString("middleName").orEmpty(), doc.getString("lastName").orEmpty())
+                doc.getString("middleName").orEmpty(), doc.getString("lastName").orEmpty(),
+                doc.getString("activeLoanId") ?: "initial", doc.getLong("renewalCount") ?: 0,
+                doc.getString("transactionNumber").orEmpty())
         }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.displayName })
 
     companion object {

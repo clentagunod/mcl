@@ -34,5 +34,77 @@ h1{font-size:26px;letter-spacing:-.6px}h2{font-size:19px}p{overflow-wrap:anywher
 .table-wrap{overflow:auto;max-width:100%}
 /* Mobile settings expose operational configuration; print layout stays on the website. */
 .settings-form>fieldset:nth-of-type(n+3),.settings-form>.settings-storage{display:none}
-@media(min-width:700px){.mobile-content{padding:28px}.client-list{grid-template-columns:repeat(2,minmax(0,1fr))}.mobile-header{padding:18px 28px}}
-@media(max-width:600px){.form-grid,.summary-grid,.stats-grid{grid-template-columns:1fr!important}.page-header{align-items:flex-start}.modal-actions{flex-wrap:wrap}.modal{padding:16px}.inline-form{display:block}}
+/* Adapt to the available app window, including split-screen and freeform resize.
+   CSS changes presentation without remounting forms or resetting their drafts. */
+.mobile-shell{min-height:100vh;min-height:100dvh;min-width:0}
+.mobile-content{width:100%;max-width:1440px;box-sizing:border-box}
+.mobile-header .brand{flex:1;min-width:0;flex-direction:row;align-items:center;margin:0;padding:0;text-align:left;font-size:16px}
+.mobile-header .brand>div{min-width:0}
+.mobile-header>.btn{flex:0 0 auto}
+.mobile-header .brand small{max-width:100%;white-space:normal;overflow-wrap:anywhere}
+.client-card{min-width:0}
+.client-actions .btn{white-space:normal;flex:1 1 110px;overflow-wrap:anywhere}
+.client-list{grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))}
+.balance-line{flex-wrap:wrap}
+.zoom-controls,.pagination{flex-wrap:wrap}
+.receipt-line>span{min-width:0;overflow-wrap:anywhere}
+.receipt-line>.btn,.receipt-line>div{flex-shrink:0}
+.mcl-dialog-content .form-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))}
+.mcl-dialog-content .summary-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr))}
+.mcl-dialog-content .modal-actions{flex-wrap:wrap}
+.mcl-dialog-content .table-wrap{min-width:0}
+@media(min-width:600px){
+ .mobile-content{padding:24px}
+ .mobile-header{padding:16px 24px}
+}
+@media(min-width:840px){
+ .admin-workspace{display:grid;grid-template-columns:192px minmax(0,1fr);grid-template-rows:auto 1fr;align-items:start}
+ .admin-workspace>.mobile-header{grid-column:1/-1;grid-row:1}
+ .admin-workspace>.mobile-nav{grid-column:1;grid-row:2;position:sticky;top:0;display:flex;flex-direction:column;align-items:stretch;gap:8px;padding:20px 12px;max-height:100vh;max-height:100dvh;overflow-y:auto;overflow-x:hidden;border-right:1px solid #dce6eb}
+ .admin-workspace>.mobile-nav a{white-space:normal;border-radius:12px}
+ .admin-workspace>.mobile-content{grid-column:2;grid-row:2;margin:0 auto}
+}
+@media(max-width:599px){
+ .mobile-content{padding:16px 12px 24px}
+ .mobile-header{padding:12px;gap:8px}
+ .mobile-header .brand{gap:8px}
+ .brand .app-logo{width:36px;height:36px}
+ .form-grid,.summary-grid,.stats-grid{grid-template-columns:1fr!important}
+ .page-header{align-items:flex-start}
+ .modal-actions{flex-wrap:wrap}
+ .inline-form{display:block}
+ .mcl-dialog-backdrop{padding:8px}
+ .mcl-dialog-panel{border-radius:12px}
+ .mcl-dialog-header,.mcl-dialog-content{padding:12px}
+ .zoom-controls{gap:6px}
+ .receipt-line{flex-wrap:wrap}
+}
+@media(max-height:480px){
+ .login-wrap{padding:12px;place-items:start center}
+ .login-card{padding:20px}
+ .mcl-dialog-backdrop{padding:6px}
+ .mcl-dialog-header{padding:6px 12px}
+ .index-scroll{height:240px;min-height:120px;max-height:55vh}
+}
+@media(hover:hover) and (pointer:fine){
+ .mobile-nav a:hover{background:#e6eff2}
+ .mobile-nav a.active:hover{background:#153e52}
+}
+:focus-visible{outline:2px solid #176578;outline-offset:3px}
+/* A measured viewport handles WebViews with inconsistent dynamic viewport units. */
+.auth-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;box-sizing:border-box;padding:24px 16px;background:#eef3f6}
+.auth-card{flex:0 0 auto;width:100%;max-width:420px;margin:auto 0;padding:32px 28px 24px;border:1px solid #dce5eb;border-radius:16px;background:#fff;box-shadow:0 8px 32px #1733420a}
+.auth-heading{text-align:center;margin:0 0 28px}
+.auth-heading .app-logo{display:block;width:80px;height:80px;object-fit:contain;margin:0 auto 16px}
+.auth-business{margin:0 0 10px;font-size:12px;font-weight:700;letter-spacing:2px;color:#176578}
+.auth-heading h1{margin:0 0 8px;font-size:25px;font-weight:650;letter-spacing:-.4px}
+.auth-heading .muted{margin:0;font-size:14px;line-height:1.5}
+.auth-card fieldset{padding:0;margin:0 0 24px;border:0}
+.auth-card label{display:grid;gap:8px;margin:0 0 18px;font-size:14px;font-weight:600;text-align:left}
+.auth-card label:last-child{margin-bottom:0}
+.auth-card input{height:48px;padding:12px;border:1px solid #ced9e0;border-radius:8px;background:#fff}
+.auth-card>.btn{min-height:48px;border-radius:8px}
+.auth-footer{margin:20px 0 0;padding-top:18px;border-top:1px solid #e7edf1;text-align:center;color:#60717d;font-size:12px;line-height:1.5}
+@media(max-width:359px){.auth-card{padding:28px 20px 20px}}
+@media(max-height:500px){.auth-screen{padding:12px}.auth-card{padding:20px}.auth-heading{margin-bottom:20px}.auth-heading .app-logo{width:56px;height:56px;margin-bottom:12px}}
+

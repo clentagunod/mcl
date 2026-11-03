@@ -11,9 +11,12 @@ import { subscribePayments } from '@web/services/payments';
 import { subscribeHolidays } from '@web/services/holidays';
 import { buildClientRows } from '@web/lib/loan';
 import { describeError } from '@web/lib/errors';
+import { normalizeClient, normalizePayment } from './loanCycle';
+const clientsFeed: typeof subscribeClients = (data, error) => subscribeClients(values => data(values.map(normalizeClient)), error);
+const paymentsFeed: typeof subscribePayments = (data, error) => subscribePayments(values => data(values.map(normalizePayment)), error);
 export function CollectorData({ children }: { children: ReactNode }) {
-  const clients = useSubscription(subscribeClients);
-  const payments = useSubscription(subscribePayments);
+  const clients = useSubscription(clientsFeed);
+  const payments = useSubscription(paymentsFeed);
   const holidays = useSubscription(subscribeHolidays);
   const today = useToday();
   const [policy, setPolicy] = useState({ loading: true, error: null as string | null, enforce: false });

@@ -10,7 +10,8 @@ export function WebIndexCard({ client, payments, settings, date }: {
 }) {
   const viewport = useRef<HTMLDivElement>(null);
   const [availableWidth, setAvailableWidth] = useState(300);
-  const [zoom, setZoom] = useState<number | null>(null);
+  const [zoom, setZoom] = useState<number | null>(1.25);
+  const [previewHeight, setPreviewHeight] = useState(() => Math.max(200, Math.min(520, window.innerHeight * .5)));
   const layout = settings.studio.index;
   const document = useMemo(() => renderPrintDocument({
     kind: 'index', clients: [client], payments, settings, layout, date,
@@ -23,11 +24,15 @@ export function WebIndexCard({ client, payments, settings, date }: {
   const scale = zoom ?? fit;
   useLayoutEffect(() => {
     const element = viewport.current!;
-    const update = () => setAvailableWidth(Math.max(1, element.clientWidth - 2));
+    const update = () => {
+      setAvailableWidth(Math.max(1, element.clientWidth - 2));
+      setPreviewHeight(Math.max(200, Math.min(520, window.innerHeight * .5)));
+    };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(element);
-    return () => observer.disconnect();
+    window.addEventListener('resize', update);
+    return () => { observer.disconnect(); window.removeEventListener('resize', update); };
   }, []);
   return <>
     <div className="zoom-controls">
@@ -37,11 +42,13 @@ export function WebIndexCard({ client, payments, settings, date }: {
       <button className="btn" onClick={() => setZoom(null)}>Fit</button>
       <button className="btn" onClick={() => setZoom(1)}>100%</button>
     </div>
-    <div ref={viewport} className="index-scroll" aria-label="Index card preview" tabIndex={0}>
+    <p className="muted small">Swipe across and scroll down to read the card. Use Fit for a full-card overview.</p>
+    <div ref={viewport} className="index-scroll" aria-label="Index card preview" tabIndex={0}
+      style={{ height: previewHeight, minHeight: 0, maxHeight: "none", flexShrink: 0 }}>
       <div style={{ position: 'relative', width: width * scale, height: height * scale }}>
-        <iframe title="Web index card" sandbox="allow-same-origin" srcDoc={document.html}
+        <iframe title="Web index card" tabIndex={-1} sandbox="allow-same-origin" srcDoc={document.html}
           style={{ position: 'absolute', left: 0, top: 0, width, height, border: 0,
-            transform: `scale(${scale})`, transformOrigin: 'top left', background: '#fff' }} />
+            transform: `scale(${scale})`, transformOrigin: 'top left', background: '#fff', pointerEvents: 'none' }} />
       </div>
     </div>
   </>;

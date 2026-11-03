@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, type FormEvent } from 'react';
+import { lazy, Suspense, useEffect, useState, type FormEvent } from 'react';
 import { HashRouter, Navigate, NavLink, Outlet, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './AuthProvider';
 import { CollectorData } from './CollectorData';
@@ -14,6 +14,17 @@ const Holidays = lazy(() => import('@web/pages/HolidaysPage'));
 const Liquidation = lazy(() => import('@web/pages/LiquidationPage'));
 const Settings = lazy(() => import('./Settings'));
 function Login() {
+  const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight);
+  useEffect(() => {
+    const update = () => setViewportHeight(window.visualViewport?.height ?? window.innerHeight);
+    update();
+    window.addEventListener('resize', update);
+    window.visualViewport?.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.visualViewport?.removeEventListener('resize', update);
+    };
+  }, []);
   const { signIn, accessError } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -23,22 +34,22 @@ function Login() {
     e.preventDefault(); setBusy(true); setError('');
     try { await signIn(email, password); } catch (e) { setError(describeError(e)); } finally { setBusy(false); }
   }
-  return <main className="login-wrap"><form className="card login-card" onSubmit={submit}>
-    <Logo /><p className="eyebrow">MCL LENDING</p><h1>Welcome back</h1><p className="muted">Sign in to your collection workspace.</p>
+  return <main className="auth-screen" style={{ minHeight: viewportHeight }}><form className="auth-card" onSubmit={submit}>
+    <header className="auth-heading"><Logo /><p className="auth-business">MCL LENDING</p><h1>Account sign in</h1><p className="muted">Sign in to access your account.</p></header>
     <fieldset disabled={busy}><label>Email<input type="email" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)} /></label>
     <label>Password<input type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} /></label></fieldset>
     {(error || accessError) && <p role="alert" className="alert alert-error">{error || accessError}</p>}
     <button className="btn btn-primary btn-block" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
-    <p className="muted small">Administrator and collector accounts</p>
+    <p className="auth-footer">Administrator and collector access</p>
   </form></main>;
 }
-function Shell() {
+export function Shell() {
   const { profile, signOut } = useAuth();
   const [error, setError] = useState('');
   const admin = profile?.role === 'admin';
   const links = admin ? [['/', 'Overview'], ['/clients', 'Clients'], ['/liquidation', 'Ledger'], ['/collectors', 'Collectors'], ['/holidays', 'Holidays'], ['/settings', 'Settings']] : [['/', 'Collections']];
-  return <div className="mobile-shell"><header className="mobile-header"><div className="brand"><Logo /><div><strong>MCL Lending</strong><small>{profile?.fullName} · {admin ? 'Administrator' : 'Collector'}</small></div></div><button className="btn" onClick={() => void signOut().catch(e => setError(describeError(e)))}>Sign out</button></header>
-    <nav className="mobile-nav" aria-label="Main">{links.map(([to, title]) => <NavLink key={to} to={to} end>{title}</NavLink>)}</nav>
+  return <div className={admin ? "mobile-shell admin-workspace" : "mobile-shell collector-workspace"}><header className="mobile-header"><div className="brand"><Logo /><div><strong>MCL Lending</strong><small>{profile?.fullName} · {admin ? 'Administrator' : 'Collector'}</small></div></div><button className="btn" onClick={() => void signOut().catch(e => setError(describeError(e)))}>Sign out</button></header>
+    {admin && <nav className="mobile-nav" aria-label="Main">{links.map(([to, title]) => <NavLink key={to} to={to} end>{title}</NavLink>)}</nav>}
     <main className="mobile-content">{error && <p role="alert">{error}</p>}<Suspense fallback={<p role="status">Loading workspace…</p>}><Outlet /></Suspense></main>
   </div>;
 }

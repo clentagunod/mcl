@@ -4,6 +4,7 @@ import { db } from '@web/config/firebase';
 import { useSettings } from '@web/context/SettingsContext';
 import { mergeSettings } from '@web/config/settings';
 import { useMemo } from 'react';
+import { isCurrentLoanPayment } from '@web/lib/loan-cycle';
 import { WebIndexCard } from './WebIndexCard';
 import { useAuth } from '@web/context/AuthContext';
 import { useData } from '@web/context/DataContext';
@@ -37,9 +38,9 @@ export default function Clients() {
     <div className="client-list">{matches.slice(page * 25, (page + 1) * 25).map(({ client, summary }) => <article className="card client-card" key={client.id}>
       <div><h2>{client.lastName}, {client.firstName} {client.middleName}</h2><p className="muted small">{publicClientId(client)} · Transaction {client.transactionNumber || '—'}</p></div>
       <div className="balance-line"><span>Outstanding<strong>{formatPeso(summary.outstanding)}</strong></span><span>Daily payable<strong>{formatPeso(dailyPayable(client))}</strong></span></div>
-      <div className="client-actions"><button className="btn" title={admin ? 'Edit client' : 'Edit your payments'} onClick={() => admin ? setEdit(client) : setPaymentHistory(client)}>{admin ? 'Edit client' : 'Edit payment'}</button><button className="btn btn-primary" disabled={!!error || loading} onClick={() => setPayment({ client })}>Add payment</button><button className="btn" onClick={() => setCard(client)}>Index card</button></div>
-      {admin && <button className="btn btn-small btn-danger-outline" onClick={() => setRemove(client)}>Delete client</button>}
-      {!admin && <span className="muted small">Open Edit payment to correct your own receipts.</span>}
+      <div className="client-actions"><button className="btn" title={admin ? 'Edit client' : 'Edit your payments'} onClick={() => admin ? setEdit(client) : setPaymentHistory(client)}>{admin ? 'Edit client' : 'Payment history'}</button><button className="btn btn-primary" disabled={!!error || loading} onClick={() => setPayment({ client })}>Add payment</button><button className="btn" onClick={() => setCard(client)}>Index card</button></div>
+      {admin && !(client.renewalCount ?? 0) && <button className="btn btn-small btn-danger-outline" onClick={() => setRemove(client)}>Delete client</button>}
+      {!admin && <span className="muted small">Saved payment corrections require an administrator.</span>}
     </article>)}</div>
     {!loading && !matches.length && <p>No clients found.</p>}
     <div className="pagination"><button className="btn" disabled={!page} onClick={() => setPage(page - 1)}>Previous</button><span>{page + 1} / {Math.max(1, Math.ceil(matches.length / 25))}</span><button className="btn" disabled={(page + 1) * 25 >= matches.length} onClick={() => setPage(page + 1)}>Next</button></div>
@@ -76,7 +77,7 @@ function IndexCard({ client, onClose, onCorrect }: { client: Client; onClose: ()
     {styleError && <p className="muted small">Saved card styling is unavailable. Showing the standard website design.</p>}
     <WebIndexCard client={client} payments={payments} settings={cardSettings} date={today} />
     <h3>Receipt history</h3><p className="muted small">Live view. Same-date receipts are combined in the numbered card.</p>
-    {receipts.map(p => <div className="receipt-line" key={p.id}><span>{p.paymentDate} · {formatPeso(p.amount)}<small>{p.collectorName} · {p.notes}</small></span>{onCorrect && (admin || p.collectorId === user?.uid) && <div><button className="btn" onClick={() => onCorrect(p)}>Edit payment</button>{admin && <button className="btn btn-danger-outline" onClick={() => setRemove(p)}>Delete</button>}</div>}</div>)}
+    {receipts.map(p => <div className="receipt-line" key={p.id}><span>{p.paymentDate} · {formatPeso(p.amount)}<small>{p.collectorName} · Loan {p.loanId || 'initial'} · {p.notes}</small></span>{onCorrect && admin && isCurrentLoanPayment(client, p) && <div><button className="btn" onClick={() => onCorrect(p)}>Edit payment</button>{admin && <button className="btn btn-danger-outline" onClick={() => setRemove(p)}>Delete</button>}</div>}</div>)}
     {remove && <ConfirmDialog title="Delete receipt" message="Delete this payment? The balance and index days will be recalculated." confirmLabel="Delete receipt" danger onConfirm={() => deletePayment(remove.id)} onClose={() => setRemove(null)} />}
   </Modal>;
 }

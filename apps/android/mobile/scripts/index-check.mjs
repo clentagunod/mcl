@@ -11,6 +11,11 @@ try {
   assert.equal(await frame.locator('.signature-line').count(),45);
   assert.equal(await frame.locator('.index-entry').first().locator('span').first().innerText(),'250.00');
   assert.equal(await frame.locator('.index-heading img').evaluate(img=>img.complete && img.naturalWidth > 0),true);
+  assert.equal(await page.getByLabel('Card zoom').innerText(), '125%');
+  assert.ok(await page.locator('.index-scroll').evaluate(el => el.scrollWidth > el.clientWidth && el.scrollHeight > el.clientHeight));
+  await page.locator('.index-scroll').evaluate(el => { el.scrollLeft = 250; el.scrollTop = 80; });
+  assert.ok(await page.locator('.index-scroll').evaluate(el => el.scrollLeft > 0 && el.scrollTop > 0));
+  await page.locator('.index-scroll').evaluate(el => { el.scrollLeft = 0; el.scrollTop = 0; });
   const bounds = await page.locator('.index-scroll').boundingBox();
   assert.ok(bounds && bounds.height >= 240 && bounds.width > 200);
   await page.screenshot({path:'../.tmp/web-index-'+width+'.png'});
