@@ -2,6 +2,7 @@ import { COUNT_APPROVAL_DATE_AS_DAY_ONE } from '../config/app';
 import type { Client, LoanStatus, Payment } from '../types';
 import { addDays, isSunday, type ISODate } from './dates';
 import { round2, sumAmounts } from './money';
+import { isCurrentLoanPayment } from './loan-cycle';
 
 /** Safety stop so a bad holiday list can never cause an endless loop. */
 const MAX_SCAN_DAYS = 3660;
@@ -72,6 +73,7 @@ export function summarizeLoan(
   holidays: ReadonlySet<ISODate>,
   today: ISODate,
 ): LoanSummary {
+  clientPayments = clientPayments.filter((payment) => isCurrentLoanPayment(client, payment));
   const totalPayable = round2(client.principal + client.interest);
   const totalPaid = sumAmounts(clientPayments.map((payment) => payment.amount));
   const outstanding = Math.max(0, round2(totalPayable - totalPaid));

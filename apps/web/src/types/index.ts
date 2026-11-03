@@ -7,6 +7,10 @@ export type UserRole = 'admin' | 'collector';
 
 export interface Client {
   id: string;
+  /** Absent on the original loan; each renewal starts a separate ledger cycle. */
+  activeLoanId?: string;
+  renewalCount?: number;
+  originalTransactionNumber?: string;
   /** Stable public identifier; legacy document IDs remain unchanged. */
   clientNumber?: string;
   /** Unique, zero-padded five digit loan transaction number. */
@@ -27,11 +31,12 @@ export interface Client {
 }
 
 /** The fields an admin supplies when adding or editing a client. */
-export type ClientInput = Omit<Client, 'id' | 'clientNumber' | 'transactionNumber'>;
+export type ClientInput = Omit<Client, 'id' | 'clientNumber' | 'transactionNumber' | 'activeLoanId' | 'renewalCount' | 'originalTransactionNumber'>;
 
 /** A principal repayment entered by a collector (or an admin). */
 export interface Payment {
   id: string;
+  loanId?: string;
   clientId: string;
   amount: number;
   /** The day the money was collected. */
@@ -44,6 +49,29 @@ export interface Payment {
 }
 
 export type PaymentInput = Omit<Payment, 'id' | 'createdAt'>;
+
+export interface RenewalTerms {
+  principal: number;
+  interest: number;
+  loanTermDays: LoanTermDays;
+  dailyAmount: number;
+  approvalDate: ISODate;
+}
+
+export interface RenewalRecord {
+  id: string;
+  sequence: number;
+  previousLoan: Client;
+  newLoan: Client;
+  totalPaid: number;
+  paidOn: ISODate;
+  dueDate: ISODate;
+  newDueDate: ISODate;
+  approvedBy: string;
+  approvedByName: string;
+  notes: string;
+  createdAt: Date | null;
+}
 
 export interface UserProfile {
   uid: string;

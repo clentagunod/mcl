@@ -2,6 +2,7 @@ import type { Client, Payment } from '../types';
 import { groupPaymentsByClient } from './loan';
 import { round2, sumAmounts } from './money';
 import { summaryClientName } from './printables';
+import { isCurrentLoanPayment } from './loan-cycle';
 
 export const CONSOLIDATION_DAYS = 58;
 export interface CollectionDay { day: number; date: string; amount: number; receipts: number }
@@ -20,7 +21,7 @@ export interface ConsolidationRow {
 export function buildConsolidation(clients: readonly Client[], payments: readonly Payment[]): ConsolidationRow[] {
   const grouped = groupPaymentsByClient(payments);
   return [...clients].sort((a, b) => summaryClientName(a).localeCompare(summaryClientName(b)) || a.id.localeCompare(b.id)).map((client) => {
-    const receipts = grouped.get(client.id) ?? [];
+    const receipts = (grouped.get(client.id) ?? []).filter((p) => isCurrentLoanPayment(client, p));
     const byDate = new Map<string, number[]>();
     for (const receipt of receipts) {
       const amounts = byDate.get(receipt.paymentDate) ?? [];

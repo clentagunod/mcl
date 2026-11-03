@@ -15,6 +15,7 @@ import type { Payment } from '../../types';
 import { useSettings } from '../../context/SettingsContext';
 import { dailyPayable, indexEntries, publicClientId } from '../../lib/printables';
 import { collectorMinimum } from '../../lib/payment-policy';
+import { isCurrentLoanPayment, loanId } from '../../lib/loan-cycle';
 
 interface PaymentsModalProps {
   clientId: string;
@@ -29,12 +30,13 @@ export function PaymentsModal({ clientId, onClose }: PaymentsModalProps) {
   const [notes, setNotes] = useState('');
 
   const row = rows.find((candidate) => candidate.client.id === clientId);
+  const [openedLoanId] = useState(() => row ? loanId(row.client) : null);
   const clientPayments = useMemo(
     () =>
       payments
-        .filter((payment) => payment.clientId === clientId)
+        .filter((payment) => row && isCurrentLoanPayment(row.client, payment))
         .sort((a, b) => b.paymentDate.localeCompare(a.paymentDate) || (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0)),
-    [payments, clientId],
+    [payments, clientId, row],
   );
 
   const [values, setValues] = useState<PaymentFormValues>({ amount: '', paymentDate: today });
@@ -46,12 +48,13 @@ export function PaymentsModal({ clientId, onClose }: PaymentsModalProps) {
   // The client may be deleted while this window is open.
   if (!row || !user) return null;
   const { client, summary } = row;
+  const loanChanged = loanId(client) !== openedLoanId;
   const minimumAmount = collectorMinimum(client, settings.payments.enforceDailyMinimum, profile?.role);
   const policyBlocksEntry = profile?.role === 'collector' && (policyLoading || !!policyError);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (busy || policyBlocksEntry) return;
+    if (busy || policyBlocksEntry || loanChanged) return;
     setFormError(null);
 
     const result = validatePaymentForm(values, {
@@ -70,6 +73,7 @@ export function PaymentsModal({ clientId, onClose }: PaymentsModalProps) {
     try {
       await addPayment({
         clientId,
+        loanId: loanId(client),
         amount: result.value.amount,
         paymentDate: result.value.paymentDate,
         collectorId: user!.uid,
@@ -119,7 +123,7 @@ export function PaymentsModal({ clientId, onClose }: PaymentsModalProps) {
         </div>
       </dl>
 
-      {summary.outstanding > 0 ? (
+      {loanChanged ? <p className="alert alert-error" role="alert">This client was renewed in another session. Close and reopen Payments to enter a receipt for the new loan.</p> : summary.outstanding > 0 ? (
         <form onSubmit={handleSubmit} noValidate className="inline-form">
           <FormField label="Amount paid (₱)" error={errors.amount}>
             <input

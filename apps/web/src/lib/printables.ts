@@ -2,6 +2,7 @@ import { DEFAULT_SETTINGS, type AppSettings, type PrintLayout, type PrintableKin
 import type { Client, Payment } from '../types';
 import { isISODate } from './dates';
 import { round2, sumAmounts } from './money';
+import { isCurrentLoanPayment } from './loan-cycle';
 
 export function dailyPayable(client: Pick<Client, 'principal' | 'interest' | 'dailyAmount'> & { loanTermDays: number }): number {
   if (client.dailyAmount && Number.isFinite(client.dailyAmount) && client.dailyAmount > 0) return round2(client.dailyAmount);
@@ -22,7 +23,7 @@ export interface IndexEntry { day: number; amount: number; date: string }
 export function indexEntries(client: Client, payments: readonly Payment[]): IndexEntry[] {
   const byDate = new Map<string, number[]>();
   for (const payment of payments) {
-    if (payment.clientId !== client.id || !isISODate(payment.paymentDate) || payment.amount <= 0) continue;
+    if (!isCurrentLoanPayment(client, payment) || !isISODate(payment.paymentDate) || payment.amount <= 0) continue;
     const amounts = byDate.get(payment.paymentDate) ?? [];
     amounts.push(payment.amount);
     byDate.set(payment.paymentDate, amounts);
@@ -40,6 +41,7 @@ export function indexEntries(client: Client, payments: readonly Payment[]): Inde
 
 export interface SummaryEntry {
   client: Client;
+  transactionNumber: string;
   amount: number;
   collectors: string;
   notes: string;
@@ -59,7 +61,8 @@ export function dailySummary(clients: readonly Client[], payments: readonly Paym
   return [...clients].sort((a, b) => summaryClientName(a).localeCompare(summaryClientName(b))).map((client) => {
     const entries = (byClient.get(client.id) ?? []).sort((a, b) => (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0) || a.id.localeCompare(b.id));
     return {
-      client, amount: sumAmounts(entries.map((p) => p.amount)),
+      client, transactionNumber: entries.length ? [...new Set(entries.map((p) => p.loanId && p.loanId !== 'initial' ? p.loanId : client.originalTransactionNumber || client.transactionNumber || 'Pending'))].join('; ') : client.transactionNumber || 'Pending',
+      amount: sumAmounts(entries.map((p) => p.amount)),
       collectors: [...new Set(entries.map((p) => p.collectorName || 'Unknown collector'))].join('; '),
       notes: [...new Set(entries.map((p) => p.notes?.trim() || defaultNote))].join('; '),
     };

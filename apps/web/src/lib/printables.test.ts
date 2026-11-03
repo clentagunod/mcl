@@ -57,7 +57,7 @@ describe('daily summary', () => {
     expect(entries[1]).toMatchObject({ amount: 0, collectors: '', notes: '' });
   });
   it('paginates long notes and retains every client exactly once', () => {
-    const entries = Array.from({ length: 70 }, (_, i) => ({ client: { ...client, id: String(i) }, amount: i, collectors: 'Collector', notes: 'A detailed note about this payment. '.repeat(3) }));
+    const entries = Array.from({ length: 70 }, (_, i) => ({ client: { ...client, id: String(i) }, transactionNumber: '00001', amount: i, collectors: 'Collector', notes: 'A detailed note about this payment. '.repeat(3) }));
     const pages = summaryPages(entries, DEFAULT_SETTINGS.studio.summary);
     expect(pages.length).toBeGreaterThan(1);
     expect(pages.flat()).toEqual(entries);

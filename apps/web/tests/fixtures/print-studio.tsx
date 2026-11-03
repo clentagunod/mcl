@@ -4,7 +4,7 @@ import { DEFAULT_SETTINGS } from '../../src/config/settings';
 import { DataContext } from '../../src/context/DataContext';
 import { SettingsContext } from '../../src/context/SettingsContext';
 import PrintablesPage from '../../src/pages/PrintablesPage';
-import type { Client, Payment } from '../../src/types';
+import type { Client, Payment, RenewalRecord, UserProfile } from '../../src/types';
 import '../../src/index.css';
 import SettingsPage from '../../src/pages/SettingsPage';
 import { AuthContext } from '../../src/context/AuthContext';
@@ -13,6 +13,8 @@ import { buildClientRows } from '../../src/lib/loan';
 import { useEffect, useState } from 'react';
 import LiquidationPage from '../../src/pages/LiquidationPage';
 import { addDays } from '../../src/lib/dates';
+import { RenewalTimeline } from '../../src/pages/clients/RenewalModal';
+import type { User } from 'firebase/auth';
 
 // Local synthetic data only. This fixture never opens a Firebase subscription.
 const count = new URLSearchParams(location.search).get('many') ? 65 : 3;
@@ -29,6 +31,21 @@ const payments: Payment[] = [
   { id: 'p3', clientId: clients[0].id, amount: 500, paymentDate: '2026-11-02', collectorId: 'admin1', collectorName: 'Admin One', notes: 'Two installments', createdAt: new Date('2026-11-02T08:00:00Z') },
   { id: 'p4', clientId: clients[1].id, amount: 250, paymentDate: '2026-11-02', collectorId: 'collector1', collectorName: 'Collector One', createdAt: new Date('2026-11-02T08:00:00Z') },
 ];
+const renewalFixture = new URLSearchParams(location.search).get('renewal');
+if (renewalFixture) {
+  payments.push({ ...payments[0], id: 'settlement', amount: 10500, paymentDate: '2026-11-02' });
+  clients[1].approvalDate = '2026-07-01';
+  payments.push({ ...payments[3], id: 'late-settlement', amount: 11000 });
+  clients[2].renewalCount = 1;
+  clients[2].activeLoanId = '00003';
+}
+const renewalRecord: RenewalRecord = {
+  id: '00004', sequence: 1, previousLoan: { ...clients[0], transactionNumber: '00001' },
+  newLoan: { ...clients[0], transactionNumber: '00004', principal: 20000, interest: 2500, dailyAmount: 450, loanTermDays: 50, approvalDate: '2026-11-02' },
+  totalPaid: 11250, paidOn: '2026-11-02', dueDate: '2026-12-11', newDueDate: '2026-12-30', approvedBy: 'admin1', approvedByName: 'Admin One',
+  notes: 'Renewal approved after review.', createdAt: new Date('2026-11-02T08:00:00Z'),
+};
+const fixtureProfile: UserProfile | null = renewalFixture ? { uid: 'admin1', role: renewalFixture === 'collector' ? 'collector' : 'admin', fullName: 'Admin One', email: '', phone: '', active: true, createdAt: null } : null;
 if (new URLSearchParams(location.search).has('latepayments')) {
   clients[2].approvalDate = '2026-07-31';
   for (let i = 0; i < 60; i += 1) payments.push({ id: `late-${i}`, clientId: clients[2].id, amount: 100, paymentDate: addDays('2026-08-01', i), collectorId: 'collector1', collectorName: 'Collector One', createdAt: null });
@@ -43,11 +60,13 @@ function Fixture() {
   const [currentClients, setCurrentClients] = useState(clients);
   useEffect(() => {
     const update = (event: Event) => setCurrentClients(clients.slice(0, (event as CustomEvent<number>).detail));
+    const renew = () => setCurrentClients((current) => current.map((c, i) => i === 0 ? { ...c, activeLoanId: '00004', transactionNumber: '00004', renewalCount: 1, approvalDate: '2026-11-02', principal: 20000 } : c));
     window.addEventListener('fixture:client-count', update);
-    return () => window.removeEventListener('fixture:client-count', update);
+    window.addEventListener('fixture:renew-client', renew);
+    return () => { window.removeEventListener('fixture:client-count', update); window.removeEventListener('fixture:renew-client', renew); };
   }, []);
   const state = { clients: currentClients, payments, collectors: [], holidays: [], rows: buildClientRows(currentClients, payments, new Set(), '2026-11-02'), today: '2026-11-02', loading: false, error: null };
-  return <BrowserRouter><AuthContext.Provider value={{ user: null, profile: null, status: 'signedIn', accessError: null, signIn: async () => {}, signOut: async () => {} }}><SettingsContext.Provider value={{ settings: DEFAULT_SETTINGS, loading: false, error: null }}><DataContext.Provider value={state}><div className="content" style={{ maxWidth: 1600 }}>{isSettings ? <SettingsPage /> : isClients ? <ClientsPage /> : isConsolidation ? <LiquidationPage /> : <PrintablesPage />}</div></DataContext.Provider></SettingsContext.Provider></AuthContext.Provider></BrowserRouter>;
+  return <BrowserRouter><AuthContext.Provider value={{ user: fixtureProfile ? { uid: 'admin1' } as User : null, profile: fixtureProfile, status: 'signedIn', accessError: null, signIn: async () => {}, signOut: async () => {} }}><SettingsContext.Provider value={{ settings: DEFAULT_SETTINGS, loading: false, error: null }}><DataContext.Provider value={state}><div className="content" style={{ maxWidth: 1600 }}>{new URLSearchParams(location.search).get('view') === 'renewal-timeline' ? <RenewalTimeline records={[renewalRecord]} /> : isSettings ? <SettingsPage /> : isClients ? <ClientsPage /> : isConsolidation ? <LiquidationPage /> : <PrintablesPage />}</div></DataContext.Provider></SettingsContext.Provider></AuthContext.Provider></BrowserRouter>;
 }
 createRoot(document.getElementById('root')!).render(
   <Fixture />,

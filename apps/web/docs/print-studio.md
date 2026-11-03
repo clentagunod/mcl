@@ -255,3 +255,8 @@ collector permissions and administrator settlements. The runner can use Android 
 bundled JDK on Windows and keeps emulator downloads in ignored `.tmp/`.
 These tests do not change live customer records or publish rules. Live Firebase
 deployment is still a separate administrator action.
+
+Renewed clients use separate loan cycles: index cards, balances and consolidation
+use the active cycle, while actual daily collections retain all cycles. See the
+[renewal guide](./renewals.md) for immutable history, the trusted admin endpoint,
+backend deployment and Android's required loanId integration.

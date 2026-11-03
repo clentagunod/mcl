@@ -50,7 +50,7 @@ export default function LiquidationPage() {
           <button type="button" className="btn btn-small" onClick={() => workspace.current?.scrollTo({ left: workspace.current.scrollWidth, behavior: 'smooth' })}>Jump to totals</button>
         </div>
         <p className="field-hint" id="consolidation-guide"><span className="term-legend" /> Highlighted cell = the client’s loan endpoint (45, 50 or 58). One numbered day per payment date; same-date receipts are combined. Click a day to inspect the full history.</p>
-        <p className="field-hint">This sheet’s balance is principal minus all payments, including payments after day 58. Negative values show excess over principal. The dashboard’s outstanding balance also includes fixed interest.</p>
+        <p className="field-hint">This sheet’s balance is principal minus all payments for the current loan, including payments after day 58. Negative values show excess over principal. The dashboard’s outstanding balance also includes fixed interest. Earlier loan ledgers remain in each client’s Renewal history.</p>
         {matched.length === 0 ? <EmptyState>{clients.length ? 'No clients match the search and loan term.' : 'No clients available yet.'}</EmptyState> :
           <div className="consolidation-workspace" ref={workspace} role="region" aria-label="58-day consolidation ledger" aria-describedby="consolidation-guide" tabIndex={0}>
             <table className="consolidation-table">

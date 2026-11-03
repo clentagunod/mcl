@@ -5,6 +5,7 @@
   "scripts": {
     "test": "vitest run",
     "test:rules": "node scripts/test-firestore-rules.mjs",
+    "test:renewals": "npm --prefix functions run build && node scripts/test-firestore-rules.mjs --renewals",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",

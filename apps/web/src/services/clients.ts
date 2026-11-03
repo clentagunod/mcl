@@ -3,6 +3,7 @@ import {
   deleteDoc,
   doc,
   getDocs,
+  getDoc,
   query,
   runTransaction,
   serverTimestamp,
@@ -104,6 +105,8 @@ export async function updateClient(id: string, input: ClientInput): Promise<void
 
 /** Deletes the client AND all of that client's payment records. */
 export async function deleteClient(id: string): Promise<void> {
+  const client = await getDoc(doc(clientsCollection, id));
+  if (client.data()?.renewalCount > 0) throw new Error('Clients with renewal history must be retained for audit.');
   const payments = await getDocs(query(paymentsCollection, where('clientId', '==', id)));
 
   for (let start = 0; start < payments.docs.length; start += BATCH_LIMIT) {

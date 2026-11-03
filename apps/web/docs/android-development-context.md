@@ -4,6 +4,29 @@ This README is stored under `apps/web/docs` because the current work permits edi
 only under `apps/web`. The Android source has been read for compatibility and remains
 unchanged. This document describes the shared contract and the next Android changes.
 
+## Renewal integration requirement
+
+The web now supports admin-only renewal. **Before collectors service renewed loans,
+Android must become aware of loan cycles.** Its current clientId-only sum would count
+old receipts against the new loan. The prepared rules reject untagged or stale-cycle
+writes for renewed clients instead of silently misapplying them. Unrenewed clients
+keep their original behavior.
+
+- Read `clients/{id}.activeLoanId`, default `initial`, and `renewalCount`.
+- Read optional `payments/{id}.loanId`, default `initial`.
+- Sum only receipts matching both clientId and active loanId for balances/index days.
+- Capture loanId when opening payment entry, refresh the client before saving,
+  and include that same loanId in the receipt. Do not retag queued receipts after renewal.
+- Refresh transaction number, principal, interest, daily amount, term and approval
+  date after a cycle change; restart tracking against the new approval date.
+- Keep original receipts. Daily actual collections can span multiple loan cycles.
+- Renewal is granted by an authenticated server function after admin approval;
+  collectors cannot grant renewals or read private renewal history.
+
+Closed-loan receipts and renewal history are immutable. The original transaction
+number is retained as `originalTransactionNumber`; subsequent loanIds equal their
+five digit transaction numbers. See [renewal workflow, deployment and tests](./renewals.md).
+
 ## Current architecture
 
 - Web administrators manage clients, loan details, collector accounts, holidays,
@@ -84,6 +107,7 @@ paymentDate    string     YYYY-MM-DD collection date
 collectorId    string     signed-in Firebase Auth UID
 collectorName  string     collector profile fullName
 createdAt      timestamp  FieldValue.serverTimestamp()
+loanId         string     required after renewal; activeLoanId captured at entry
 ```
 
 Optional `notes` (preferred) or legacy `note` is a string of at most 1,500 characters.
@@ -137,7 +161,8 @@ informational or required, and provide a useful message on `PERMISSION_DENIED` i
 policy changed during entry. Keep the database rule as the final enforcement point.
 Collectors must not query the whole settings subcollection, because that is denied.
 
-The original six-field Android receipt shape is unchanged and still works. Until its
+The original six-field Android receipt shape still works for unrenewed clients. Renewed
+loans require loanId as described above. Until its
 UI is updated, an enabled minimum rejects an undersized receipt at the server and the
 old Android app may display a generic error instead of the dedicated minimum message.
 
@@ -147,10 +172,10 @@ old Android app may display a generic error instead of the dedicated minimum mes
   existing Firestore number format only at the persistence boundary. Avoid `Float`.
 - Approval/payment dates are calendar dates, not timestamps. Keep `YYYY-MM-DD`; do not
   shift them through UTC timestamp conversions. `createdAt` is a real server timestamp.
-- Loan outstanding: `max(0, principal + interest − all payments)`. Existing Android
+- Loan outstanding: `max(0, principal + interest − current-loan payments)`. Existing Android
   validation checks positive amount, approval date and server-read outstanding amount.
 - The website's Consolidation / Liquidation sheet intentionally reports a different
-  figure: **principal − all payments**, without clamping. Negative balance means payments
+  figure: **principal − current-loan payments**, without clamping. Negative balance means payments
   exceed principal. Do not replace loan outstanding with this reporting balance.
 - Index-card and consolidation day numbers are chronological **paying dates**, not
   elapsed calendar dates. Combine multiple same-date receipts. Skipped dates leave no

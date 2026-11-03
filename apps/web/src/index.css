@@ -600,3 +600,15 @@ textarea:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px;
   .studio-controls .print-layout-fields { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
   .studio-controls .print-layout-fields .field:first-child { grid-column: auto; }
 }
+.renewal-tag { display: block; margin-top: 6px; border: 1px solid #bcd8cf; border-radius: 999px; padding: 3px 9px; background: #eef7f3; color: #215b47; cursor: pointer; font: inherit; font-size: 12px; }
+.renewal-tag:hover { background: #dcefe5; }
+.renewal-approval { display: flex; align-items: flex-start; gap: 10px; line-height: 1.5; margin-top: 18px; }
+.renewal-approval input { width: auto; margin-top: 5px; }
+.renewal-timeline { list-style: none; padding: 0 0 0 20px; border-left: 2px solid #bcd8cf; margin: 24px 0; }
+.renewal-timeline > li { position: relative; padding: 0 0 28px 6px; }
+.renewal-timeline > li::before { content: ''; width: 10px; height: 10px; border-radius: 50%; background: #28765c; position: absolute; left: -26px; top: 5px; }
+.renewal-heading { display: flex; flex-wrap: wrap; gap: 8px 20px; justify-content: space-between; }
+.renewal-heading span { color: #64748b; font-size: 12px; }
+.renewal-notes { white-space: pre-wrap; overflow-wrap: anywhere; }
+.renewal-receipts { margin: 16px 0; }
+.renewal-timeline summary, .renewal-receipts summary { cursor: pointer; padding: 8px 0; }

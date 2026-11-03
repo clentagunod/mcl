@@ -14,6 +14,9 @@ import { PaymentsModal } from './PaymentsModal';
 import { dailyPayable, publicClientId } from '../../lib/printables';
 import { Link } from 'react-router-dom';
 import { Modal } from '../../components/Modal';
+import { useAuth } from '../../context/AuthContext';
+import { renewalEligibility } from '../../lib/renewal';
+import { RenewalModal, RenewalHistoryModal } from './RenewalModal';
 
 type StatusFilter = LoanStatus | 'all';
 
@@ -26,6 +29,8 @@ type ModalState =
   | { type: 'payments'; clientId: string }
   | { type: 'delete'; client: Client }
   | { type: 'address'; client: Client }
+  | { type: 'renew'; clientId: string }
+  | { type: 'renewal-history'; clientId: string }
   | null;
 
 function matchesSearch(row: ClientRow, term: string): boolean {
@@ -36,7 +41,9 @@ function matchesSearch(row: ClientRow, term: string): boolean {
 }
 
 export default function ClientsPage() {
-  const { rows, loading } = useData();
+  const { rows, payments, holidays, today, loading, error } = useData();
+  const { profile } = useAuth();
+  const holidayDates = useMemo(() => new Set(holidays.map((h) => h.date)), [holidays]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [modal, setModal] = useState<ModalState>(null);
@@ -81,6 +88,7 @@ export default function ClientsPage() {
       />
 
       <section className="card">
+        {error && <p className="alert alert-error" role="alert">{error}</p>}
         <div className="toolbar">
           <input
             type="search"
@@ -133,6 +141,7 @@ export default function ClientsPage() {
                       <strong>{formatClientName(client)}</strong>
                       <button type="button" className="client-address muted small" title={client.address} aria-label={`View full address for ${formatClientName(client)}`} onClick={() => setModal({ type: 'address', client })}>{client.address}</button>
                       <div className="muted small">{publicClientId(client)} · Txn {client.transactionNumber || 'Pending'}</div>
+                      {!!client.renewalCount && profile?.role === 'admin' && <button type="button" className="renewal-tag" onClick={() => setModal({ type: 'renewal-history', clientId: client.id })}>Renewal history · {client.renewalCount}</button>}
                     </td>
                     <td>{client.cellphone}</td>
                     <td className="num">{formatPeso(client.principal)}</td>
@@ -153,6 +162,10 @@ export default function ClientsPage() {
                       <StatusBadge status={summary.status} />
                     </td>
                     <td className="actions-col">
+                      {summary.status === 'paid' && profile?.role === 'admin' && (() => {
+                        const eligibility = renewalEligibility(client, payments, holidayDates, today);
+                        return <button type="button" className="btn btn-small btn-primary" disabled={!eligibility.eligible || !!error || !client.transactionNumber} title={eligibility.reason} onClick={() => setModal({ type: 'renew', clientId: client.id })}>Renew</button>;
+                      })()}{' '}
                       <Link className="btn btn-small" to={`/printables?client=${encodeURIComponent(client.id)}`}>Print</Link>{' '}
                       <button type="button" className="btn btn-small" onClick={() => setModal({ type: 'payments', clientId: client.id })}>
                         Payments
@@ -160,7 +173,7 @@ export default function ClientsPage() {
                       <button type="button" className="btn btn-small" onClick={() => setModal({ type: 'edit', client })}>
                         Edit
                       </button>{' '}
-                      <button type="button" className="btn btn-small btn-danger-outline" onClick={() => setModal({ type: 'delete', client })}>
+                      <button type="button" className="btn btn-small btn-danger-outline" disabled={!!client.renewalCount} title={client.renewalCount ? 'Clients with renewal history are retained for audit.' : undefined} onClick={() => setModal({ type: 'delete', client })}>
                         Delete
                       </button>
                     </td>
@@ -193,6 +206,8 @@ export default function ClientsPage() {
       {modal?.type === 'add' && <ClientFormModal onClose={close} />}
       {modal?.type === 'edit' && <ClientFormModal client={modal.client} onClose={close} />}
       {modal?.type === 'payments' && <PaymentsModal clientId={modal.clientId} onClose={close} />}
+      {modal?.type === 'renew' && <RenewalModal clientId={modal.clientId} onClose={close} />}
+      {modal?.type === 'renewal-history' && <RenewalHistoryModal clientId={modal.clientId} onClose={close} />}
       {modal?.type === 'address' && <Modal title={`Address — ${formatClientName(modal.client)}`} onClose={close}>
         <p className="address-full">{modal.client.address}</p><button type="button" className="btn" onClick={close}>Close</button>
       </Modal>}

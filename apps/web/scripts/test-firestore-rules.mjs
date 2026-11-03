@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const environment = { ...process.env, CI: 'true', NO_UPDATE_NOTIFIER: 'true', FIREBASE_EMULATORS_PATH: path.join(root, '.tmp', 'firebase-emulators') };
+const environment = { ...process.env, CI: 'true', NO_UPDATE_NOTIFIER: 'true', XDG_CONFIG_HOME: path.join(root, '.tmp', 'firebase-config'), FIREBASE_EMULATORS_PATH: path.join(root, '.tmp', 'firebase-emulators') };
 // Android Studio includes a JDK; using it does not modify the Android project.
 const studioJava = 'C:\\Program Files\\Android\\Android Studio\\jbr';
 if (!environment.JAVA_HOME && process.platform === 'win32' && existsSync(path.join(studioJava, 'bin', 'java.exe'))) environment.JAVA_HOME = studioJava;
@@ -16,7 +16,7 @@ mkdirSync(environment.FIREBASE_EMULATORS_PATH, { recursive: true });
 const child = spawn(process.execPath, [
   path.join(root, 'node_modules', 'firebase-tools', 'lib', 'bin', 'firebase.js'),
   'emulators:exec', '--project', 'demo-mcl-policy', '--config', 'firebase.emulator.json', '--only', 'firestore',
-  'node --test tests/firestore-policy.rules.mjs',
+  process.argv.includes('--renewals') ? 'node --test --test-concurrency=1 tests/firestore-policy.rules.mjs functions/tests/renewal.emulator.mjs' : 'node --test tests/firestore-policy.rules.mjs',
 ], { cwd: root, env: environment, stdio: 'inherit', windowsHide: true });
 child.on('error', (error) => { console.error(error.message); process.exitCode = 1; });
 child.on('exit', (code) => { process.exitCode = code ?? 1; });

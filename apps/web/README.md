@@ -7,6 +7,9 @@ Android app that collectors use to enter payments.
 For Android integration, data contracts and the new daily-payment policy, read the
 [Android development context](./docs/android-development-context.md). Implementation
 and setup for reports/settings are covered in the [workspace guide](./docs/print-studio.md).
+Admin-only loan renewal, cycle isolation and backend deployment are covered in the
+[renewal guide](./docs/renewals.md). The callable and rules must be deployed to enable
+live renewals, and Android must send loanId before servicing renewed borrowers.
 
 ## 1. One-time Firebase setup
 
@@ -79,7 +82,8 @@ The collector app signs in with Firebase Authentication (email + password).
 | `collectorName` | string    | the collector's `fullName`                                  |
 | `createdAt`     | timestamp | **must be the server timestamp** (`FieldValue.serverTimestamp()`) |
 
-The six fields are required. Optional `notes` (preferred) or legacy `note` may contain
+The six fields are required. `loanId` is also required after a client's first renewal;
+missing or `initial` belongs to the original loan. Optional `notes` (preferred) or legacy `note` may contain
 up to 1,500 characters. Other fields are rejected for collector writes. The collector
 minimum setting lives in `settings/Configurations/elements/paymentPolicy`; active
 collectors may read that one settings document.
@@ -108,7 +112,7 @@ src/
 - All payments are loaded into the browser to compute balances. This is fine for a small business
   (thousands of payments); for much larger volumes, store a running total per client with a Cloud Function.
 - Consolidation / Liquidation is a live, paginated 58-day ledger. Its balance is
-  principal minus all payments; the dashboard's loan outstanding also includes interest.
+  principal minus current-loan payments; the dashboard's loan outstanding also includes interest.
 - The daily-payable minimum is optional and applies to collector receipts. Web admins
   may enter smaller partial/final settlements. The prepared rules must be published
   to enforce this in Android; its UI remains unchanged. See the Android context above.

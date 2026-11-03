@@ -1,7 +1,7 @@
 import { before, beforeEach, after, test } from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, getDocs, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 
 let environment;
 const policyPath = 'settings/Configurations/elements/paymentPolicy';
@@ -88,4 +88,39 @@ test('missing policy preserves backwards-compatible informational behavior', asy
     await deleteDoc(doc(context.firestore(), policyPath));
   });
   await assertSucceeds(write(as('collector'), 100));
+});
+
+test('only the server may advance loan cycles or write immutable renewal history', async () => {
+  const admin = as('admin');
+  await assertFails(updateDoc(doc(admin, 'clients/mcl0001'), { activeLoanId: '00002', renewalCount: 1 }));
+  await assertFails(setDoc(doc(admin, 'clients/mcl0001/renewals/00002'), { paidOn: '2026-11-02' }));
+  await assertFails(setDoc(doc(as('collector'), 'clients/mcl0001/renewals/00002'), { paidOn: '2026-11-02' }));
+});
+
+test('renewed clients require the active cycle on every admin and collector receipt', async () => {
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await updateDoc(doc(context.firestore(), 'clients/mcl0001'), { activeLoanId: '00002', renewalCount: 1, approvalDate: '2026-11-02' });
+    await setDoc(doc(context.firestore(), 'payments/old'), payment(11250));
+  });
+  for (const uid of ['admin', 'collector']) {
+    const db = as(uid);
+    await assertFails(write(db, 250));
+    await assertFails(write(db, 250, { loanId: 'initial' }));
+    await assertFails(write(db, 250, { loanId: '00002', paymentDate: '2026-11-01' }));
+    await assertSucceeds(write(db, 250, { loanId: '00002' }));
+  }
+  await assertFails(deleteDoc(doc(as('admin'), 'payments/old')));
+  await assertFails(updateDoc(doc(as('admin'), 'payments/old'), { loanId: '00002' }));
+  await assertFails(deleteDoc(doc(as('admin'), 'clients/mcl0001')));
+});
+
+test('renewal history is readable by admins and private from collectors', async () => {
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'clients/mcl0001/renewals/00002'), { sequence: 1 });
+  });
+  const path = 'clients/mcl0001/renewals/00002';
+  await assertSucceeds(getDoc(doc(as('admin'), path)));
+  await assertFails(getDoc(doc(as('collector'), path)));
+  await assertFails(updateDoc(doc(as('admin'), path), { sequence: 2 }));
+  await assertFails(deleteDoc(doc(as('admin'), path)));
 });
