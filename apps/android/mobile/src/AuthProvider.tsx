@@ -25,9 +25,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (current !== generation) return;
         // Require a server-confirmed role before opening data subscriptions.
         if (snapshot.metadata.fromCache) return;
-        const raw = snapshot.data();
+        // The shared converter rejects unknown roles and includes Developer access.
         const profile = userFromDoc(snapshot);
-        if (!profile?.active || !['admin', 'collector'].includes(raw?.role)) {
+        if (!profile?.active) {
           setState({ status: 'signedOut', user: null, profile: null, accessError: 'This account is inactive or has no authorized profile.' });
           void signOut(auth).catch(() => {});
           return;

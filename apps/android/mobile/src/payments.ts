@@ -7,6 +7,7 @@ import { clientFromDoc } from '@web/services/converters';
 import { assertCycle, cycleId, PaymentValidationError } from './loanCycle';
 import { receiptBackendEnabled, writeServerReceipt } from '@web/services/receipt-backend';
 import { isMoney } from '@web/lib/money';
+import { isAdminRole, isUserRole } from '@web/lib/roles';
 export function parseAmount(value: string) {
   if (!/^\d+(\.\d{1,2})?$/.test(value)) throw new PaymentValidationError('Enter a positive amount with at most two decimal places.');
   const amount = Number(value);
@@ -34,7 +35,7 @@ export async function saveReceipt(id: string, input: PaymentInput, previous?: Pa
     const clientDoc = await tx.get(doc(db, 'clients', input.clientId));
     const policy = await tx.get(doc(db, 'settings/Configurations/elements/paymentPolicy'));
     const role = profile.data()?.role;
-    if (!profile.exists() || profile.data()?.active === false || !['admin', 'collector'].includes(role)) throw new PaymentValidationError('Account access has changed.');
+    if (!profile.exists() || profile.data()?.active === false || !isUserRole(role)) throw new PaymentValidationError('Account access has changed.');
     if (!clientDoc.exists()) throw new PaymentValidationError('Client no longer exists.');
     const client = clientFromDoc(clientDoc);
     assertCycle(input.loanId, client.activeLoanId);
@@ -48,9 +49,10 @@ export async function saveReceipt(id: string, input: PaymentInput, previous?: Pa
     if (role === 'collector' && policy.data()?.enforceDailyMinimum && outstanding < Math.round(dailyPayable(client) * 100)) throw new PaymentValidationError('Remaining balance is below the daily minimum. Ask an administrator for settlement.');
     if (Math.round(input.amount * 100) > outstanding) throw new PaymentValidationError('Amount exceeds the latest outstanding balance.');
     if (previous) {
-      if (role !== 'admin') throw new PaymentValidationError('Saved payment corrections require an administrator.');
+      if (!isAdminRole(role)) throw new PaymentValidationError('Saved payment corrections require an administrator.');
       if (!existing.exists() || existing.data().amount !== previous.amount || existing.data().paymentDate !== previous.paymentDate || (existing.data().notes ?? existing.data().note ?? '') !== (previous.notes ?? '')) throw new PaymentValidationError('This receipt changed elsewhere. Close and reopen it.');
-      tx.update(ref, { amount: input.amount, paymentDate: input.paymentDate, notes: input.notes ?? '', ...(cycleId(client.activeLoanId) !== 'initial' ? { createdAt: serverTimestamp() } : {}) });
+      // Corrections keep the original creation time and collector, including renewed loans.
+      tx.update(ref, { amount: input.amount, paymentDate: input.paymentDate, notes: input.notes ?? '' });
     } else tx.set(ref, { ...input, createdAt: serverTimestamp() });
   });
 }

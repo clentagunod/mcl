@@ -34,15 +34,15 @@ it('refreshes collector feeds without requesting private admin settings or profi
   expect(mocks.getCollection.mock.calls.map(call => call[0])).toEqual(['clients', 'payments', 'holidays']);
   expect(mocks.getProfile.mock.calls.map(call => call[0])).toEqual(['users/u', 'settings/Configurations/elements/paymentPolicy']);
 });
-it('refreshes the existing admin feeds and settings', async () => {
-  mocks.profile.role = 'admin';
+it.each(['admin', 'developer'])('refreshes the existing %s admin feeds and settings', async role => {
+  mocks.profile.role = role;
   await refreshSessionData();
   expect(mocks.getCollection.mock.calls.map(call => call[0])).toEqual([
     'clients', 'payments', 'holidays', 'users?collectors',
     'settings/Configurations/elements', 'settings/Printables/elements',
   ]);
 });
-it.each([{ role: 'collector', active: false }, { role: 'unknown', active: true }, undefined])('does not refresh data for an unauthorized profile: %j', async profile => {
+it.each([{ role: 'collector', active: false }, { role: 'developer', active: false }, { role: 'unknown', active: true }, { role: 'Developer', active: true }, undefined])('does not refresh data for an unauthorized profile: %j', async profile => {
   mocks.getProfile.mockResolvedValue({ data: () => profile });
   await refreshSessionData();
   expect(mocks.getCollection).not.toHaveBeenCalled();

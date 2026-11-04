@@ -1,5 +1,6 @@
 import { collection, doc, enableNetwork, getDocFromServer, getDocsFromServer, query, where } from 'firebase/firestore';
 import { auth, db } from '@web/config/firebase';
+import { isAdminRole, isUserRole } from '@web/lib/roles';
 
 /** Update the existing listener cache without replacing routes, forms or receipt IDs. */
 export async function refreshSessionData() {
@@ -9,13 +10,13 @@ export async function refreshSessionData() {
   const snapshot = await getDocFromServer(doc(db, 'users', uid));
   const profile = snapshot.data();
   if (auth.currentUser?.uid !== uid || !profile || profile.active === false
-    || !['admin', 'collector'].includes(profile.role)) return;
+    || !isUserRole(profile.role)) return;
   const reads: Promise<unknown>[] = [
     getDocsFromServer(collection(db, 'clients')),
     getDocsFromServer(collection(db, 'payments')),
     getDocsFromServer(collection(db, 'holidays')),
   ];
-  if (profile.role === 'admin') {
+  if (isAdminRole(profile.role)) {
     reads.push(
       getDocsFromServer(query(collection(db, 'users'), where('role', '==', 'collector'))),
       getDocsFromServer(collection(db, 'settings', 'Configurations', 'elements')),

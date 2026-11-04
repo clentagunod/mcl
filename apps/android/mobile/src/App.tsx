@@ -8,6 +8,7 @@ import { DataProvider } from '@web/context/DataProvider';
 import { SettingsProvider } from '@web/context/SettingsProvider';
 import { Logo } from '@web/components/Logo';
 import { describeError } from '@web/lib/errors';
+import { isAdminRole } from '@web/lib/roles';
 import { useSettings } from '@web/context/SettingsContext';
 import { LoadingPanel, Notice, OfflineNotice, WorkspaceFeedback } from './Status';
 import { awaitingServer, networkOnline, useConnectivity } from './connectivity';
@@ -60,7 +61,7 @@ export function Shell() {
   const online = useConnectivity();
   const [error, setError] = useState('');
   const [signingOut, setSigningOut] = useState(false);
-  const admin = profile?.role === 'admin';
+  const admin = isAdminRole(profile?.role);
   const waiting = awaitingServer(data.error);
   const initial = (data.loading || waiting) && !data.clients.length && !data.payments.length;
   const links = admin ? [['/', 'Overview'], ['/clients', 'Clients'], ['/liquidation', 'Ledger'], ['/collectors', 'Collectors'], ['/holidays', 'Holidays'], ['/settings', 'Settings']] : [['/', 'Collections']];
@@ -112,7 +113,7 @@ function Session() {
   const { status, profile, user } = useAuth();
   if (status === 'loading') return <AccessCheck />;
   if (status !== 'signedIn') return <Login />;
-  const admin = profile?.role === 'admin';
+  const admin = isAdminRole(profile?.role);
   const routes = <Routes><Route element={<Shell />}>
     <Route index element={admin ? <Dashboard /> : <Clients />} />
     <Route path="clients" element={<Clients />} />

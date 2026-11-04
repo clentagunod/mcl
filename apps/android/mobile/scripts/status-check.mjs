@@ -63,15 +63,27 @@ try {
   assert.equal(await dialog.getByLabel('Amount collected (₱)', { exact: true }).inputValue(), '123.45');
   await dialog.locator('.mcl-dialog-header button[aria-label="Close"]').click();
 
-  for (const role of ['collector', 'admin']) {
+  for (const role of ['collector', 'admin', 'developer']) {
     await show(role);
-    if (role === 'admin') {
+    if (role === 'admin' || role === 'developer') {
       await page.getByRole('link', { name: 'Settings', exact: true }).click();
       assert.equal(await page.getByLabel('Business name', { exact: true }).isDisabled(), true);
       await page.getByRole('button', { name: 'Load saved settings', exact: true }).click();
       assert.equal(await page.getByLabel('Business name', { exact: true }).inputValue(), 'Loaded business');
       assert.equal(await page.getByRole('button', { name: 'Save settings', exact: true }).isDisabled(), false);
+      await page.getByRole('link', { name: 'Collectors', exact: true }).click();
+      await page.getByRole('heading', { name: 'Collectors & Admins', exact: true }).waitFor();
+      await page.getByText('Fixture admin', { exact: true }).waitFor();
+      await page.getByText('Fixture collector', { exact: true }).waitFor();
+      assert.equal(await page.getByText('Fixture developer', { exact: true }).count(), 0);
       await page.getByRole('link', { name: 'Clients', exact: true }).click();
+      await page.getByRole('button', { name: 'Index card', exact: true }).click();
+      const card = page.getByRole('dialog');
+      await card.getByRole('button', { name: 'Edit payment', exact: true }).click();
+      const correction = page.getByRole('dialog');
+      await correction.getByRole('heading', { name: 'Correct payment', exact: true }).waitFor();
+      assert.equal(await correction.getByLabel('Amount collected (₱)', { exact: true }).inputValue(), '100');
+      await correction.locator('.mcl-dialog-header button[aria-label="Close"]').click();
       await network(false);
       await page.getByRole('button', { name: 'Edit client', exact: true }).click();
       const edit = page.getByRole('dialog');
@@ -129,6 +141,6 @@ try {
   await page.waitForFunction(() => !document.querySelector('.workspace-feedback .notice-warning'));
   await assertQuiet();
   assert.deepEqual(errors, []);
-  console.log('PASS: offline-only connectivity alerts; silent automatic refresh on native/browser reconnection; login, admin, collector and dialog draft preservation; loading/error states; responsive layouts at 320–1280px. External HTTPS was blocked.');
+  console.log('PASS: offline-only connectivity alerts; silent automatic refresh on native/browser reconnection; login, admin, developer, collector and dialog draft preservation; loading/error states; responsive layouts at 320–1280px. External HTTPS was blocked.');
   await context.close();
 } finally { await browser.close(); }

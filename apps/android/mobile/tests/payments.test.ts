@@ -73,11 +73,22 @@ describe('receipt boundary', () => {
     mocks.docs['payments/receipt-1'] = { ...input, collectorId: 'other' };
     await expect(saveReceipt('receipt-1', input, { ...input, id: 'receipt-1', createdAt: null })).rejects.toThrow('administrator');
   });
-  it('allows administrator settlements and corrections', async () => {
-    mocks.docs['users/collector'].role = 'admin';
+  it.each(['admin', 'developer'])('allows %s settlements and corrections', async role => {
+    mocks.docs['users/collector'].role = role;
     mocks.docs['payments/receipt-1'] = input;
     await saveReceipt('receipt-1', { ...input, amount: 50 }, { ...input, id: 'receipt-1', createdAt: null });
     expect(mocks.update).toHaveBeenCalledWith('payments/receipt-1', { amount: 50, paymentDate: input.paymentDate, notes: '' });
+  });
+  it.each(['admin', 'developer'])('allows %s to create a below-minimum settlement', async role => {
+    mocks.docs['users/collector'].role = role;
+    await saveReceipt('settlement', { ...input, amount: 50 });
+    expect(mocks.set).toHaveBeenCalledWith('payments/settlement', expect.objectContaining({ amount: 50, createdAt: 'SERVER_TIME' }));
+  });
+  it.each(['developer', 'unknown', 'Developer'])('rejects inactive or invalid role %s before writing', async role => {
+    mocks.docs['users/collector'] = { role, active: role !== 'developer' };
+    await expect(saveReceipt('receipt-1', input)).rejects.toThrow('access has changed');
+    expect(mocks.set).not.toHaveBeenCalled();
+    expect(mocks.update).not.toHaveBeenCalled();
   });
   it('protects corrections from stale forms', async () => {
     mocks.docs['users/collector'].role = 'admin';
@@ -87,6 +98,25 @@ describe('receipt boundary', () => {
 });
 
 describe('renewal submission boundary', () => {
+  it.each([
+    ['admin', 'initial'], ['admin', '00002'],
+    ['developer', 'initial'], ['developer', '00002'],
+  ])('preserves receipt creation time and attribution when %s corrects loan %s', async (role, loanId) => {
+    mocks.docs['users/collector'].role = role;
+    mocks.docs['clients/legacy-id'].activeLoanId = loanId;
+    const createdAt = new Date('2026-01-02T01:23:45Z');
+    const original = { ...input, loanId, collectorId: 'original-collector', collectorName: 'Original Collector', createdAt };
+    mocks.docs['payments/receipt-1'] = original;
+    const previous = { ...original, id: 'receipt-1' };
+    await saveReceipt('receipt-1', { ...input, loanId, amount: 50, notes: 'Corrected' }, previous);
+    expect(mocks.update).toHaveBeenCalledWith('payments/receipt-1', { amount: 50, paymentDate: input.paymentDate, notes: 'Corrected' });
+    const updated = { ...original, ...mocks.update.mock.calls[0][1] };
+    expect(updated.createdAt).toBe(createdAt);
+    expect(updated.collectorId).toBe('original-collector');
+    expect(updated.collectorName).toBe('Original Collector');
+    expect(updated.loanId).toBe(loanId);
+    expect(mocks.set).not.toHaveBeenCalled();
+  });
   it('rejects a stale open form after renewal without writing', async () => {
     mocks.docs['clients/legacy-id'].activeLoanId='00002';
     await expect(saveReceipt('stale',input)).rejects.toThrow('renewed');
