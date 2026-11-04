@@ -22,14 +22,16 @@ function event(uid: string | null) { fake.auth.currentUser = uid ? { uid } : nul
 const snapshot = (data: Record<string, unknown> | undefined, fromCache = false, hasPendingWrites = false): Snapshot => ({ id: 'admin', metadata: { fromCache, hasPendingWrites }, data: () => data });
 beforeEach(() => { vi.clearAllMocks(); fake.auth.currentUser = null; fake.profiles = []; fake.signOut.mockResolvedValue(undefined); });
 describe('live administrator authorization', () => {
-  it('requires a server-confirmed role, supports legacy active flag, and revokes live access', () => {
+  it.each(['admin', 'developer'])('requires a server-confirmed %s role, supports legacy active flag, and revokes live access', role => {
     const states: AdminSession[] = []; const stop = watchAdminSession(state => states.push(state));
     event('admin'); const feed = fake.profiles[0];
-    feed.next(snapshot({ role: 'admin' }, true));
-    feed.next(snapshot({ role: 'admin' }, false, true));
+    feed.next(snapshot({ role }, true));
+    feed.next(snapshot({ role }, false, true));
     expect(states.at(-1)?.status).toBe('loading');
-    feed.next(snapshot({ role: 'admin' })); expect(states.at(-1)?.status).toBe('signedIn');
-    feed.next(snapshot({ role: 'admin', active: false }));
+    feed.next(snapshot({ role }));
+    expect(states.at(-1)?.status).toBe('signedIn');
+    expect(states.at(-1)?.profile?.role).toBe(role);
+    feed.next(snapshot({ role, active: false }));
     expect(states.at(-1)).toMatchObject({ status: 'signedOut', user: null, profile: null });
     expect(fake.signOut).toHaveBeenCalledOnce(); stop();
   });
@@ -45,7 +47,7 @@ describe('live administrator authorization', () => {
     fake.profiles[1].next(snapshot({ role: 'admin' }));
     expect(onState).toHaveBeenCalledTimes(afterStop); expect(fake.stopAuth).toHaveBeenCalled();
   });
-  it.each([undefined, { role: 'collector', active: true }, { role: 'unexpected' }])('rejects unauthorized profiles %j', data => {
+  it.each([undefined, { role: 'collector', active: true }, { role: 'unexpected' }, { role: 'Developer' }])('rejects unauthorized profiles %j', data => {
     const states: AdminSession[] = []; const stop = watchAdminSession(state => states.push(state));
     event('admin'); fake.profiles[0].next(snapshot(data));
     expect(states.at(-1)?.status).toBe('signedOut'); expect(fake.signOut).toHaveBeenCalledOnce(); stop();

@@ -1,14 +1,18 @@
-import { getFunctions, httpsCallable } from 'firebase/functions';
-import { auth } from '../config/firebase';
 import type { Payment, PaymentInput } from '../types';
 
-// Explicit rollout switch: never fall back to a direct write after a callable failure.
-export const receiptBackendEnabled = import.meta.env.VITE_RECEIPT_BACKEND === 'callable-v1';
-export async function writeServerReceipt(operation: 'create' | 'correct' | 'delete', id: string, operationId: string, input?: PaymentInput, expected?: Payment) {
-  const call = httpsCallable(getFunctions(auth.app, 'asia-southeast1'), 'writeReceipt');
-  const result = await call({ operation, id, operationId,
-    ...(input ? { input } : {}),
-    ...(expected ? { expected: { clientId: expected.clientId, loanId: expected.loanId || 'initial', amount: expected.amount, paymentDate: expected.paymentDate, notes: expected.notes ?? '' } } : {}),
-  });
-  if ((result.data as { confirmed?: boolean })?.confirmed !== true) throw new Error('The server did not confirm this receipt. Retry the same operation.');
+/** Compatibility export for Android's existing import. Spark always uses direct writes. */
+export const receiptBackendEnabled = false;
+
+/**
+ * Keep the former signature until Android drops its optional backend branch.
+ * Fail explicitly if called directly; never invoke or silently enable a Cloud Function.
+ */
+export async function writeServerReceipt(
+  _operation: 'create' | 'correct' | 'delete',
+  _id: string,
+  _operationId: string,
+  _input?: PaymentInput,
+  _expected?: Payment,
+): Promise<never> {
+  throw new Error('The Cloud Functions receipt backend is disabled. Use direct Firestore receipt operations.');
 }

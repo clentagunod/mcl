@@ -3,7 +3,10 @@ import type { ISODate } from '../lib/dates';
 
 export type LoanTermDays = (typeof LOAN_TERMS)[number];
 
-export type UserRole = 'admin' | 'collector';
+/** Roles that may be provisioned and managed through the website. */
+export type ManagedUserRole = 'admin' | 'collector';
+/** Developer profiles are provisioned manually and have administrator access. */
+export type UserRole = ManagedUserRole | 'developer';
 
 export interface Client {
   id: string;
@@ -85,7 +88,10 @@ export interface UserProfile {
   createdAt: Date | null;
 }
 
-export interface CollectorInput {
+export type ManagedUserProfile = UserProfile & { role: ManagedUserRole };
+
+export interface AccountInput {
+  role: ManagedUserRole;
   fullName: string;
   email: string;
   phone: string;

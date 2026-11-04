@@ -1,7 +1,8 @@
-import { COLLECTOR_MIN_PASSWORD_LENGTH, LOAN_TERMS } from '../config/app';
-import type { ClientInput, LoanTermDays } from '../types';
+import { ACCOUNT_MIN_PASSWORD_LENGTH, LOAN_TERMS } from '../config/app';
+import type { AccountInput, ClientInput, LoanTermDays } from '../types';
 import { isISODate } from './dates';
 import { isMoney, round2 } from './money';
+import { isManagedRole } from './roles';
 
 export type FieldErrors<T> = Partial<Record<keyof T, string>>;
 
@@ -140,25 +141,28 @@ export function validatePaymentForm(
   return { ok: true, value: { amount, paymentDate: values.paymentDate } };
 }
 
-// ---- Collector form ----------------------------------------------------------
+// ---- Account form ------------------------------------------------------------
 
-export interface CollectorFormValues {
+export interface AccountFormValues {
+  role: AccountInput['role'];
   fullName: string;
   email: string;
   phone: string;
   password: string;
 }
 
-export interface CollectorFormOptions {
+export interface AccountFormOptions {
   /** Editing keeps the existing email and password, so they are not validated. */
   requireCredentials: boolean;
 }
 
-export function validateCollectorForm(
-  values: CollectorFormValues,
-  { requireCredentials }: CollectorFormOptions,
-): ValidationResult<CollectorFormValues, CollectorFormValues> {
-  const errors: FieldErrors<CollectorFormValues> = {};
+export function validateAccountForm(
+  values: AccountFormValues,
+  { requireCredentials }: AccountFormOptions,
+): ValidationResult<AccountFormValues, AccountInput> {
+  const errors: FieldErrors<AccountFormValues> = {};
+
+  if (!isManagedRole(values.role)) errors.role = 'Choose a valid account role.';
 
   const fullName = cleanText(values.fullName);
   if (!fullName) errors.fullName = 'Full name is required.';
@@ -169,13 +173,13 @@ export function validateCollectorForm(
   const email = values.email.trim().toLowerCase();
   if (requireCredentials) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = 'Enter a valid email address.';
-    if (values.password.length < COLLECTOR_MIN_PASSWORD_LENGTH) {
-      errors.password = `Password must be at least ${COLLECTOR_MIN_PASSWORD_LENGTH} characters.`;
+    if (values.password.length < ACCOUNT_MIN_PASSWORD_LENGTH) {
+      errors.password = `Password must be at least ${ACCOUNT_MIN_PASSWORD_LENGTH} characters.`;
     }
   }
 
   if (Object.keys(errors).length > 0 || phone === null) return { ok: false, errors };
-  return { ok: true, value: { fullName, email, phone, password: values.password } };
+  return { ok: true, value: { role: values.role, fullName, email, phone, password: values.password } };
 }
 
 // ---- Holiday form ------------------------------------------------------------

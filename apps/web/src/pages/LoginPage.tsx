@@ -6,6 +6,8 @@ import { LoadingState } from '../components/StateMessage';
 import { APP_NAME } from '../config/app';
 import { useAuth } from '../context/AuthContext';
 import { describeError } from '../lib/errors';
+import { ThemeToggle } from '../components/ThemeToggle';
+import { Icon } from '../components/Icon';
 
 export default function LoginPage() {
   const { status, accessError, signIn } = useAuth();
@@ -34,10 +36,11 @@ export default function LoginPage() {
 
   return (
     <div className="login-wrap">
+      <div className="login-theme"><ThemeToggle /></div>
       <form className="card login-card" onSubmit={handleSubmit} noValidate>
         <Logo />
         <h1>{APP_NAME}</h1>
-        <p className="muted">Administrator sign in</p>
+        <p className="muted">Welcome back. Sign in to your lending workspace.</p>
 
         {message && (
           <p className="alert alert-error" role="alert">
@@ -67,6 +70,7 @@ export default function LoginPage() {
         <button type="submit" className="btn btn-primary btn-block" disabled={busy || !email || !password}>
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
+        <p className="login-security"><Icon name="shield" size={15} /> Administrator access only</p>
       </form>
     </div>
   );

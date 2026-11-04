@@ -3,6 +3,7 @@ import { HttpsError } from 'firebase-functions/v2/https';
 import { isMoney } from '../../src/lib/money';
 import { isISODate } from '../../src/lib/dates';
 import { dailyPayable } from '../../src/lib/printables';
+import { isAdminRole, isUserRole } from '../../src/lib/roles';
 
 const fail = (message: string): never => { throw new HttpsError('failed-precondition', message); };
 function identifier(value: unknown): value is string {
@@ -41,8 +42,8 @@ export async function mutateReceipt(db: Firestore, uid: string, request: unknown
   return db.runTransaction(async tx => {
     const actorDoc = await tx.get(db.doc(`users/${uid}`));
     const actor = actorDoc.data();
-    if (!actor || actor.active === false || !['admin', 'collector'].includes(actor.role)
-      || (operation !== 'create' && actor.role !== 'admin')) {
+    if (!actor || actor.active === false || !isUserRole(actor.role)
+      || (operation !== 'create' && !isAdminRole(actor.role))) {
       throw new HttpsError('permission-denied', 'Your account cannot perform this receipt operation.');
     }
     const audit = await tx.get(auditRef);

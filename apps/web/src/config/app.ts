@@ -14,7 +14,7 @@ export const LOAN_TERMS = [45, 50, 58] as const;
  */
 export const COUNT_APPROVAL_DATE_AS_DAY_ONE = false;
 
-export const COLLECTOR_MIN_PASSWORD_LENGTH = 8;
+export const ACCOUNT_MIN_PASSWORD_LENGTH = 8;
 
 /** How many entries the dashboard's "recent payments" feed shows. */
 export const RECENT_PAYMENTS_LIMIT = 15;

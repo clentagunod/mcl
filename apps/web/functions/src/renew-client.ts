@@ -6,6 +6,7 @@ import { formatSequence } from '../../src/lib/identifiers';
 import { isISODate } from '../../src/lib/dates';
 import type { Client, Payment, RenewalRecord } from '../../src/types';
 import { computeSchedule } from '../../src/lib/loan';
+import { isAdminRole } from '../../src/lib/roles';
 
 /** No browser-supplied roles, balances, eligibility flags or audit names are trusted. */
 export async function renewClientLoan(db: Firestore, uid: string, request: unknown, today: string) {
@@ -19,7 +20,7 @@ export async function renewClientLoan(db: Firestore, uid: string, request: unkno
   // rather than issuing another loan.
   return db.runTransaction(async (tx) => {
     const [actor, clientDoc] = await Promise.all([tx.get(db.doc(`users/${uid}`)), tx.get(clientRef)]);
-    if (actor.data()?.role !== 'admin' || actor.data()?.active === false) throw new HttpsError('permission-denied', 'Only active administrators can renew loans.');
+    if (!isAdminRole(actor.data()?.role) || actor.data()?.active === false) throw new HttpsError('permission-denied', 'Only active administrators can renew loans.');
     if (!clientDoc.exists) throw new HttpsError('not-found', 'This client no longer exists.');
     const client = { ...clientDoc.data(), id: clientDoc.id } as Client;
     if (loanId(client) !== data.expectedLoanId || client.transactionNumber !== data.expectedTransactionNumber) throw new HttpsError('failed-precondition', 'The loan changed in another session. Close this form and try again.');

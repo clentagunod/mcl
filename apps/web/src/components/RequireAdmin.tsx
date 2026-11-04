@@ -6,7 +6,7 @@ import { LoadingState } from './StateMessage';
 import { SettingsProvider } from '../context/SettingsProvider';
 
 /**
- * Route guard: only a signed-in administrator reaches the pages below it.
+ * Route guard: only a signed-in admin or developer reaches the pages below it.
  * The live data feeds start only after sign-in, so nothing is read before then.
  */
 export function RequireAdmin() {

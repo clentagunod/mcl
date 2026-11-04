@@ -3,8 +3,12 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { onCall } from 'firebase-functions/v2/https';
 import { renewClientLoan } from './renew-client';
 import { mutateReceipt } from './receipt';
+import { manageClientTrash } from './client-trash';
 
 initializeApp();
+export const clientTrash = onCall({ region: 'asia-southeast1', maxInstances: 10, timeoutSeconds: 540 }, async (request) =>
+  manageClientTrash(getFirestore(), request.auth?.uid || '', request.data));
+
 export const renewClient = onCall({ region: 'asia-southeast1', maxInstances: 10 }, async (request) => {
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
   return renewClientLoan(getFirestore(), request.auth?.uid || '', request.data, today);

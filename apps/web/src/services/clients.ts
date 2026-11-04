@@ -1,14 +1,8 @@
 import {
   collection,
-  deleteDoc,
   doc,
-  getDocs,
-  getDoc,
-  query,
   runTransaction,
   serverTimestamp,
-  where,
-  writeBatch,
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import type { Client, ClientInput } from '../types';
@@ -20,10 +14,6 @@ import { dailyPayable } from '../lib/printables';
 import { loanId } from '../lib/loan-cycle';
 
 const clientsCollection = collection(db, 'clients');
-const paymentsCollection = collection(db, 'payments');
-
-/** Firestore allows at most 500 operations per batch. */
-const BATCH_LIMIT = 400;
 
 export const subscribeClients: Subscribe<Client> = (onData, onError) =>
   subscribeToQuery(clientsCollection, clientFromDoc, onData, onError);
@@ -110,20 +100,4 @@ export async function updateClient(id: string, input: ClientInput, expected: Cli
     }
     transaction.update(ref, { ...input, updatedAt: serverTimestamp() });
   });
-}
-
-/** Deletes the client AND all of that client's payment records. */
-export async function deleteClient(id: string): Promise<void> {
-  const client = await getDoc(doc(clientsCollection, id));
-  if (client.data()?.renewalCount > 0) throw new Error('Clients with renewal history must be retained for audit.');
-  const payments = await getDocs(query(paymentsCollection, where('clientId', '==', id)));
-
-  for (let start = 0; start < payments.docs.length; start += BATCH_LIMIT) {
-    const batch = writeBatch(db);
-    payments.docs.slice(start, start + BATCH_LIMIT).forEach((payment) => batch.delete(payment.ref));
-    await batch.commit();
-  }
-
-  // The client goes last: if anything above fails, the client still exists and can be retried.
-  await deleteDoc(doc(clientsCollection, id));
 }

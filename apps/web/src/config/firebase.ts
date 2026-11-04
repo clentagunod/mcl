@@ -11,7 +11,7 @@ export const db = getFirestore(app);
 const PROVISIONING_APP_NAME = 'collector-provisioning';
 
 /**
- * A second, separate Firebase app instance used ONLY to create collector accounts.
+ * A separate Firebase app instance used only to create collector and admin accounts.
  *
  * Why: `createUserWithEmailAndPassword` signs the new user in. Doing that on the main
  * app would log the admin out. A second app has its own independent login session,

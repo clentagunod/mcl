@@ -1,56 +1,48 @@
-# Transactional receipt rollout
+# Receipts on Firebase Spark
 
-The new `writeReceipt` callable serializes payment creates, corrections, and deletions by locking
-and advancing `clients/{id}.receiptRevision` in the same server transaction as the receipt.
-It reads current-cycle receipts inside that transaction and does not need a balance backfill.
-It derives actor identity from Firebase authentication, checks the current policy and loan cycle,
-preserves original `createdAt`, and writes immutable before/after events in `receiptAudit`.
+The website writes to Firestore directly. Cloud Functions, a Blaze upgrade, and a receipt
+backend feature flag are not required. `VITE_RECEIPT_BACKEND` and the old
+`settings/Configurations/elements/receiptPolicy.backendOnly` setting are ignored.
+The retained functions source is optional legacy code and is not part of web deployment.
 
-Receipt data fields and existing loan IDs remain compatible. Legacy initial receipts without
-`loanId` continue to belong to `initial`. Deleted receipt retries are recognized from their
-operation audit record and cannot resurrect the receipt.
+## Saving and correcting receipts
 
-## Local checks
+The web form reserves a receipt ID and exact payload in local storage before writing.
+A failed or uncertain acknowledgement leaves the same receipt available for retry, even
+after a reload. A Firestore transaction checks whether that ID already exists: matching
+contents succeed without another write, while a conflicting payload is rejected.
 
-From `apps/web`, install dependencies with `npm ci` and `npm --prefix functions ci`.
-Run `npm test`, `npm run build`, and `npm run test:renewals`. The last command runs policy,
-renewal, and receipt integration tests against the demo Firestore emulator. No live project
-credentials or customer data are needed for those emulator tests.
+Admins/developers can delete a current-cycle receipt for correction. The transaction checks
+the displayed receipt against the current document and writes an immutable
+`receiptDeletions/{receiptId}` marker containing the original payment, actor, and server
+timestamp alongside the deletion. A delayed retry of that receipt never resurrects it.
+Rules require both changes together. Legacy `receiptAudit` events remain read-only.
 
-To run the opt-in browser retry case, start the test runner with both
-`VITE_RECEIPT_BACKEND=callable-v1` and `MCL_TEST_RECEIPT_BACKEND=1`, then run
-`npx playwright test receipt-backend.e2e.ts`. The test mocks the callable and blocks
-production database requests. Leave these variables out of default compatibility builds.
+Collectors can only create payments under their own profile attribution. Rules validate
+money, dates, daily-minimum policy, and the client's current loan cycle. Closed-cycle
+receipts remain immutable through ordinary payment controls. Purging a client from Trash
+can remove their remaining receipts; audit events and deletion markers are retained.
 
-## Production steps requiring separate approval
+## Limits
 
-1. Confirm the chosen Firebase project and receipt retention/deletion policy. Review all active
-   Android versions and any external/native integrations that write to `payments` directly.
-2. Deploy the reviewed functions and canonical rules from `apps/web` with explicit
-   `--config firebase.print-studio.json --project YOUR_PROJECT_ID` arguments.
-   Keep `settings/Configurations/elements/receiptPolicy.backendOnly` absent or false initially.
-3. In a test project, set build variable `VITE_RECEIPT_BACKEND=callable-v1`, rebuild the website
-   and Android APK, and exercise ordinary collection, final settlement, correction, deletion,
-   simultaneous collection, revocation, renewal, interrupted save, and retry after restart.
-   A callable failure never falls back to a direct write.
-4. Release those compatible builds. The existing default leaves the old write path available;
-   that compatibility period does **not** guarantee global overpayment prevention or complete
-   correction audit coverage. The retained native collector classes are not the launch UI and
-   still use the old write path; any external use must be upgraded before enforcement.
-5. Only after incompatible writers have been retired, set
-   `settings/Configurations/elements/receiptPolicy` to `{ backendOnly: true }` using a trusted
-   administrator. This is a live configuration mutation and is not done by the code change.
-   The rules then reject all direct receipt creates, updates, and deletes for both roles.
-6. Check cross-device behavior and audit events. Keep alerting, backup/restore checks, pending
-   receipt reconciliation, and release signing/key custody in the operational acceptance gate.
+Balance and renewal-eligibility calculations run in the website. Firestore rules cannot
+sum arbitrary receipt queries. Browser transactions track the documents they read, but
+cannot lock queries against new matching receipts from another device. This setup does
+not guarantee global overpayment prevention for simultaneous web/Android writers.
+Firestore Spark usage quotas still apply. Android source and payment document fields
+are unchanged; renewed clients still require compatible loan-cycle handling.
 
-Do not enable backend-only enforcement first: existing APKs would lose receipt write access.
-Rollback must be deliberate. Reopening direct writes restores legacy access but also restores
-the race and incomplete audit coverage. Keep immutable audit events and pending receipt IDs.
+## Verify and deploy
 
-Client deletion retains its existing behavior pending a separate retention and coordinated
-deletion design. When backend-only enforcement is enabled, the old batched client deletion
-path is deliberately denied while deleting receipts; it cannot bypass the new financial
-boundary. Resolve that workflow before enforcement if deletion is operationally required.
+From `apps/web`:
 
-No deployment, feature-flag activation, or production data migration is performed by local builds.
+```powershell
+npm.cmd test
+npm.cmd run test:spark
+npx.cmd playwright test tests/receipt-retry.e2e.ts
+npm.cmd run build
+npx.cmd firebase-tools deploy --only "firestore:rules,hosting" --config firebase.print-studio.json --project YOUR_PROJECT_ID
+```
+
+The tests use the demo emulator or synthetic browser fixtures. Deployment is separate;
+local builds do not alter production data, hosting, rules, or billing.

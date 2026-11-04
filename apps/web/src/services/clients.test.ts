@@ -116,10 +116,12 @@ describe('shared settings persistence', () => {
     const next = structuredClone(DEFAULT_SETTINGS);
     next.index.branch = 'New branch';
     next.payments.enforceDailyMinimum = true;
+    next.trash.autoDeleteDays = 7;
     await saveSettings(next, 'admin', DEFAULT_SETTINGS);
     expect(fake.documents.get('settings/Printables/elements/indexTemplate')).toMatchObject({ branch: 'New branch', updatedBy: 'admin' });
     expect(fake.documents.get('settings/Configurations/elements/paymentPolicy')).toMatchObject({ enforceDailyMinimum: true, updatedBy: 'admin' });
-    expect(fake.writes).toHaveLength(5);
+    expect(fake.documents.get('settings/Configurations/elements/trashPolicy')).toMatchObject({ autoDeleteDays: 7, updatedBy: 'admin' });
+    expect(fake.writes).toHaveLength(6);
   });
   it('rejects stale edits without overwriting another administrator’s settings', async () => {
     fake.documents.set('settings/Printables/elements/indexTemplate', { ...DEFAULT_SETTINGS.index, branch: 'Changed remotely' });

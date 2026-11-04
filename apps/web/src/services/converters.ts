@@ -2,7 +2,8 @@ import { Timestamp, type DocumentData, type QueryDocumentSnapshot } from 'fireba
 import { LOAN_TERMS } from '../config/app';
 import { isMoney } from '../lib/money';
 import { isISODate } from '../lib/dates';
-import type { Client, Holiday, LoanTermDays, Payment, UserProfile, UserRole } from '../types';
+import type { Client, Holiday, LoanTermDays, Payment, UserProfile } from '../types';
+import { isUserRole } from '../lib/roles';
 
 /**
  * Firestore documents can be written by more than one app (this web app and the Android
@@ -78,11 +79,10 @@ export function paymentFromDoc(snapshot: QueryDocumentSnapshot): Payment {
 
 export function userFromDoc(snapshot: { id: string; data: () => DocumentData | undefined }): UserProfile | null {
   const data = snapshot.data();
-  if (!data) return null;
-  const role: UserRole = data.role === 'admin' ? 'admin' : 'collector';
+  if (!data || !isUserRole(data.role)) return null;
   return {
     uid: snapshot.id,
-    role,
+    role: data.role,
     fullName: text(data.fullName),
     email: text(data.email),
     phone: text(data.phone),

@@ -7,9 +7,11 @@ Android app that collectors use to enter payments.
 For Android integration, data contracts and the new daily-payment policy, read the
 [Android development context](./docs/android-development-context.md). Implementation
 and setup for reports/settings are covered in the [workspace guide](./docs/print-studio.md).
-Admin-only loan renewal, cycle isolation and backend deployment are covered in the
-[renewal guide](./docs/renewals.md). The callable and rules must be deployed to enable
-live renewals, and Android must send loanId before servicing renewed borrowers.
+The website uses Firebase Authentication and Firestore directly and can run on the Spark
+plan, within its usage quotas. No Cloud Functions deployment or Blaze upgrade is required.
+Admin-only loan renewal and cycle isolation are covered in the
+[renewal guide](./docs/renewals.md). Publish the rules and website to enable changes.
+Android must send loanId before servicing renewed borrowers.
 
 ## 1. One-time Firebase setup
 
@@ -23,7 +25,7 @@ live renewals, and Android must send loanId before servicing renewed borrowers.
 
 ### Create your admin account (once)
 
-Rules never let the website create an admin, so you create the first one by hand:
+Create the first admin by hand; existing active admins can then add more admins from the website:
 
 1. **Authentication → Users → Add user** (your email + a strong password). Copy the **User UID**.
 2. **Firestore → Start collection** `users` → document ID = that **UID**, with fields:
@@ -34,7 +36,28 @@ Rules never let the website create an admin, so you create the first one by hand
    | `fullName` | string | your name           |
    | `email`    | string | your email          |
 
-You can now sign in to the web app. Collector accounts are created from the **Collectors** page.
+You can now sign in to the web app. Open **Collectors & Admins** to add collector or admin
+accounts, edit their names and phone numbers, send password reset emails, or deactivate or
+delete other accounts. Your own account is marked **(You)** and cannot be deleted or
+deactivated; Firestore rules enforce this even for direct SDK requests. Account roles cannot
+be changed after creation. Publish the updated Firestore rules before using these features.
+
+### Developer account (manual setup only)
+
+Create an Email/Password login in Firebase Authentication, then create `users/{uid}` in
+Firestore using that login's exact UID. Set `role` to the lowercase string `developer`,
+`active` to `true`, and add `fullName`, `email`, and `phone` (an empty string is allowed).
+Optionally add `createdAt` as a timestamp.
+
+Developer accounts have the same website permissions as admins, including
+renewals, receipts, settings, and Trash. They are excluded from **Collectors & Admins**
+and collector selectors. Application users cannot create, edit, delete, or change the role
+of a Developer profile, even through direct SDK requests. Admins also cannot read these
+profiles by UID. Manage them through privileged Firebase Console/Admin SDK access only.
+Their business actions retain the usual receipt, renewal, and Trash attribution.
+
+Deploy the updated Firestore rules and web build together before using
+a Developer login. As with admins, setting `active` to `false` revokes application access.
 
 ## 2. Run it
 
@@ -42,6 +65,7 @@ You can now sign in to the web app. Collector accounts are created from the **Co
 npm install
 npm run dev        # http://localhost:5173
 npm test           # unit tests for the loan / due-date logic
+npm run test:spark # Firestore rules and real web-service transactions in the emulator
 npm run typecheck
 npm run build      # production build in dist/
 ```
@@ -51,9 +75,15 @@ Build first, then deploy from `apps/web` with
 The configuration serves `dist/`, supports refreshed SPA routes, revalidates HTML/logo assets,
 and caches hashed JS/CSS/document assets. Deployment is a separate approval step.
 
-Read the [receipt rollout guide](./docs/receipt-rollout.md) before enabling the new
-transactional receipt backend. Keep `VITE_RECEIPT_BACKEND` unset until the callable is deployed
-and tested. Existing builds continue using the legacy write path until the coordinated rollout.
+For a complete web release after building, deploy only Firestore rules and hosting:
+
+```powershell
+npx.cmd firebase-tools deploy --only "firestore:rules,hosting" --config firebase.print-studio.json --project YOUR_PROJECT_ID
+```
+
+Receipt retry/deletion behavior and the limits of direct writes are documented in
+the [receipt guide](./docs/receipt-rollout.md). The retired `VITE_RECEIPT_BACKEND` variable
+and `receiptPolicy.backendOnly` flag are ignored by this build and its rules.
 
 ## 3. Business rules (all in `src/lib/loan.ts`, covered by tests)
 
@@ -71,7 +101,7 @@ and tested. Existing builds continue using the legacy write path until the coord
 
 All dates are plain `"YYYY-MM-DD"` strings. Money is a number in pesos.
 
-**`users/{uid}`** – one per login. `role`: `"admin"` or `"collector"`; `fullName`, `email`, `phone`, `active` (boolean).
+**`users/{uid}`** – one per login. `role`: `"admin"`, `"collector"`, or `"developer"`; `fullName`, `email`, `phone`, `active` (boolean).
 The collector app signs in with Firebase Authentication (email + password).
 
 **`clients/{id}`** – `lastName`, `firstName`, `middleName`, `address`, `cellphone`, `principal` (number),
@@ -111,13 +141,20 @@ src/
 
 ## 6. Known limitations
 
-- **Deleting a collector** removes their profile (this blocks them from the data immediately), but the Firebase
+Web client selection, bulk deletion, restore and permanent deletion are documented in
+[Client Trash](docs/client-trash.md). Publish the updated Firestore rules before
+publishing the updated web build. Android files remain unchanged.
+
+- **Deleting a collector or admin** removes their profile (this blocks them from the data immediately), but the Firebase
   Authentication login can only be deleted from the Firebase Console (Authentication → Users). Prefer
   **Deactivate** when someone leaves; it is reversible.
-- Collector **email and password** cannot be edited from the website (that needs a trusted server). Use
-  **Reset password**, which emails the collector a reset link, so give collectors real, reachable emails.
-- All payments are loaded into the browser to compute balances. This is fine for a small business
-  (thousands of payments); for much larger volumes, store a running total per client with a Cloud Function.
+- Account **email and password** cannot be edited from the website (that needs a trusted server). Use
+  **Reset password**, which emails the account holder a reset link, so use real, reachable emails.
+- Payments are loaded into the browser to compute balances. Firestore's Spark read/write quotas
+  still apply. Aggregate balance and repayment-history checks run in the web services; rules
+  enforce roles, field validation, loan-cycle boundaries, and paired changes. Browser transactions
+  cannot lock queries against new matching receipts from another writer, so this configuration
+  does not guarantee global overpayment prevention across simultaneous devices.
 - Consolidation / Liquidation is a live, paginated 58-day ledger. Its balance is
   principal minus current-loan payments; the dashboard's loan outstanding also includes interest.
 - The daily-payable minimum is optional and applies to collector receipts. Web admins

@@ -16,6 +16,8 @@ beforeEach(async () => {
   await fetch('http://127.0.0.1:8188/emulator/v1/projects/demo-mcl-policy/databases/(default)/documents', { method: 'DELETE' });
   await Promise.all([
     db.doc('users/admin').set({ role: 'admin', fullName: 'Admin One', active: true }),
+    db.doc('users/developer').set({ role: 'developer', fullName: 'Developer', active: true }),
+    db.doc('users/inactive-developer').set({ role: 'developer', active: false }),
     db.doc('users/collector').set({ role: 'collector', active: true }),
     db.doc('users/inactive').set({ role: 'admin', active: false }),
     db.doc('clients/mcl0001').set(client),
@@ -52,8 +54,16 @@ test('grants a renewal atomically, preserves identity and receipts, and records 
 });
 
 test('only active admins can grant renewal', async () => {
-  for (const uid of ['', 'collector', 'inactive', 'missing']) await assert.rejects(renew(request(), uid), (e) => ['unauthenticated', 'permission-denied'].includes(e.code));
+  for (const uid of ['', 'collector', 'inactive', 'inactive-developer', 'missing']) await assert.rejects(renew(request(), uid), (e) => ['unauthenticated', 'permission-denied'].includes(e.code));
   assert.equal((await db.collection('clients/mcl0001/renewals').get()).size, 0);
+});
+
+test('developers can renew loans and retain their identity in renewal history', async () => {
+  const result = await renew(request(), 'developer');
+  const history = (await db.doc(`clients/mcl0001/renewals/${result.renewalId}`).get()).data();
+  assert.equal(history.approvedBy, 'developer');
+  assert.equal(history.approvedByName, 'Developer');
+  assert.equal((await db.doc('clients/mcl0001').get()).data().activeLoanId, result.renewalId);
 });
 
 test('outstanding and late loans cannot be renewed even with forged eligibility fields', async () => {

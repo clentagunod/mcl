@@ -8,9 +8,12 @@ import { searchClients } from '../lib/client-search';
 import { publicClientId, summaryClientName } from '../lib/printables';
 import { formatDate } from '../lib/dates';
 import { formatPeso } from '../lib/money';
+import { Icon } from '../components/Icon';
+import './report-workspaces.css';
 
 const DAYS = Array.from({ length: CONSOLIDATION_DAYS }, (_, i) => i + 1);
 const number = new Intl.NumberFormat('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const percent = new Intl.NumberFormat('en-PH', { maximumFractionDigits: 1 });
 
 export default function LiquidationPage() {
   const { clients, payments, loading, error } = useData();
@@ -24,33 +27,40 @@ export default function LiquidationPage() {
   const matchedIds = useMemo(() => new Set(searchClients(clients, search).map((client) => client.id)), [clients, search]);
   const matched = useMemo(() => ledger.filter((row) => matchedIds.has(row.client.id) && (term === 'all' || row.client.loanTermDays === Number(term))), [ledger, matchedIds, term]);
   const totals = useMemo(() => consolidationTotals(matched), [matched]);
+  const collectedPercent = totals.principal > 0 ? totals.totalPayment / totals.principal * 100 : 0;
   const pageCount = Math.max(1, Math.ceil(matched.length / pageSize));
   const page = Math.min(requestedPage, pageCount);
   const start = (page - 1) * pageSize;
   const inspected = ledger.find((row) => row.client.id === inspectedId);
   useEffect(() => setRequestedPage((previous) => Math.min(previous, pageCount)), [pageCount]);
 
+  function scrollLedger(toTotals: boolean) {
+    workspace.current?.scrollTo({ left: toTotals ? workspace.current.scrollWidth : 0,
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  }
+
   if (loading) return <LoadingState />;
   return (
     <>
-      <PageHeader title="Consolidation / Liquidation" description="Live collection ledger from web and collector payments. Amounts are in PHP." />
+      <PageHeader title="Consolidation / Liquidation" description="Track payments, review collection days and reconcile each loan." actions={<span className="ledger-live-status" data-state={error ? 'paused' : 'live'}><span />{error ? 'Refresh paused' : 'Live collection ledger'}</span>} />
       {error && <p className="alert alert-error" role="alert">The live ledger could not refresh. Displayed information may be incomplete. {error}</p>}
-      <div className="stat-grid" aria-label="Consolidation totals">
-        <div className="card"><p className="stat-label">Total payment</p><p className="stat-value">{formatPeso(totals.totalPayment)}</p></div>
-        <div className="card"><p className="stat-label">Principal</p><p className="stat-value">{formatPeso(totals.principal)}</p></div>
-        <div className="card"><p className="stat-label">Balance · principal − payments</p><p className="stat-value">{formatPeso(totals.balance)}</p></div>
+      <div className="stat-grid ledger-stat-grid" aria-label="Consolidation totals">
+        <div className="card ledger-stat"><div className="ledger-stat-top"><p className="stat-label">Total payment</p><span className="ledger-stat-icon"><Icon name="wallet" /></span></div><p className="stat-value">{formatPeso(totals.totalPayment)}</p><p className="ledger-stat-caption">All receipts for the matched clients</p></div>
+        <div className="card ledger-stat"><div className="ledger-stat-top"><p className="stat-label">Principal</p><span className="ledger-stat-icon"><Icon name="clients" /></span></div><p className="stat-value">{formatPeso(totals.principal)}</p><p className="ledger-stat-caption">{matched.length} {matched.length === 1 ? 'client' : 'clients'} in the current view</p></div>
+        <div className="card ledger-stat"><div className="ledger-stat-top"><p className="stat-label">Balance · principal − payments</p><span className="ledger-stat-icon"><Icon name="trend" /></span></div><p className="stat-value">{formatPeso(totals.balance)}</p><p className="ledger-stat-caption">Principal balance, excluding fixed interest</p></div>
       </div>
+      <div className="ledger-collection-progress"><div><strong>{percent.format(collectedPercent)}%</strong><span>collected against principal</span></div><div className="ledger-progress-track" role="progressbar" aria-label="Payments collected against principal" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.max(0, collectedPercent))} aria-valuetext={`${collectedPercent.toFixed(1)} percent of principal collected`}><span style={{ width: `${Math.min(100, Math.max(0, collectedPercent))}%` }} /></div><p>Totals update with your filters</p></div>
       <section className="card consolidation-card">
+        <div className="ledger-section-heading"><div><h2>Collection ledger</h2><p>58 paying days, with each client’s loan endpoint highlighted.</p></div><span className="ledger-currency">PHP · Philippine peso</span></div>
         <div className="toolbar consolidation-toolbar">
-          <input type="search" aria-label="Search consolidation clients" placeholder="Search name, client ID or transaction" value={search} onChange={(event) => { setSearch(event.target.value); setRequestedPage(1); }} />
+          <div className="ledger-search"><Icon name="search" /><input type="search" aria-label="Search consolidation clients" placeholder="Search name, client ID or transaction" value={search} onChange={(event) => { setSearch(event.target.value); setRequestedPage(1); }} /></div>
           <select aria-label="Filter consolidation by loan term" value={term} onChange={(event) => { setTerm(event.target.value); setRequestedPage(1); }}>
             <option value="all">All loan terms</option>{[45, 50, 58].map((days) => <option key={days} value={days}>{days} days</option>)}
           </select>
-          <button type="button" className="btn btn-small" onClick={() => workspace.current?.scrollTo({ left: 0, behavior: 'smooth' })}>First columns</button>
-          <button type="button" className="btn btn-small" onClick={() => workspace.current?.scrollTo({ left: workspace.current.scrollWidth, behavior: 'smooth' })}>Jump to totals</button>
+          <div className="ledger-position-controls"><button type="button" className="btn btn-small" onClick={() => scrollLedger(false)}><Icon name="chevron-left" />First columns</button>
+          <button type="button" className="btn btn-small" onClick={() => scrollLedger(true)}>Jump to totals<Icon name="chevron-right" /></button></div>
         </div>
-        <p className="field-hint" id="consolidation-guide"><span className="term-legend" /> Highlighted cell = the client’s loan endpoint (45, 50 or 58). One numbered day per payment date; same-date receipts are combined. Click a day to inspect the full history.</p>
-        <p className="field-hint">This sheet’s balance is principal minus all payments for the current loan, including payments after day 58. Negative values show excess over principal. The dashboard’s outstanding balance also includes fixed interest. Earlier loan ledgers remain in each client’s Renewal history.</p>
+        <div className="ledger-reading-guide" id="consolidation-guide"><p><span className="term-legend" /><span><strong>Loan endpoint</strong> marks day 45, 50 or 58. Receipts collected on the same date share one paying day. Select an amount to see payment history.</span></p><p><Icon name="info" /><span><strong>Principal balance</strong> subtracts all current-loan payments, including those after day 58. Negative balances show excess over principal. Fixed interest is included in the dashboard’s outstanding balance.</span></p></div>
         {matched.length === 0 ? <EmptyState>{clients.length ? 'No clients match the search and loan term.' : 'No clients available yet.'}</EmptyState> :
           <div className="consolidation-workspace" ref={workspace} role="region" aria-label="58-day consolidation ledger" aria-describedby="consolidation-guide" tabIndex={0}>
             <table className="consolidation-table">
@@ -78,7 +88,7 @@ export default function LiquidationPage() {
       </section>
       {inspected && <Modal title={`Payment history — ${summaryClientName(inspected.client)}`} onClose={() => setInspectedId(null)} wide>
         <p className="muted small">{publicClientId(inspected.client)} · Transaction {inspected.client.transactionNumber || 'Pending'} · {inspected.client.loanTermDays}-day loan</p>
-        <p>Total payment: <strong>{formatPeso(inspected.totalPayment)}</strong> · Principal: <strong>{formatPeso(inspected.principal)}</strong> · Balance: <strong>{formatPeso(inspected.balance)}</strong></p>
+        <div className="ledger-history-totals"><div><span>Total payment</span><strong>{formatPeso(inspected.totalPayment)}</strong></div><div><span>Principal</span><strong>{formatPeso(inspected.principal)}</strong></div><div><span>Balance</span><strong>{formatPeso(inspected.balance)}</strong></div></div>
         {inspected.days.length ? <div className="table-wrap"><table><thead><tr><th>Day</th><th>Date collected</th><th>Receipts</th><th className="num">Amount</th></tr></thead><tbody>{inspected.days.map((day) => <tr key={day.date}><td>{day.day}</td><td>{formatDate(day.date)}</td><td>{day.receipts}</td><td className="num">{formatPeso(day.amount)}</td></tr>)}</tbody></table></div> : <EmptyState>No payments recorded.</EmptyState>}
       </Modal>}
     </>

@@ -1,4 +1,5 @@
 export type PrintableKind = 'index' | 'promissory' | 'summary';
+export type TrashRetentionDays = 0 | 3 | 7 | 30;
 export interface PrintLayout {
   paper: 'template' | 'a4' | 'letter' | 'legal' | 'custom';
   orientation: 'portrait' | 'landscape';
@@ -9,6 +10,7 @@ export interface PrintLayout {
 }
 
 export interface AppSettings {
+  trash: { autoDeleteDays: TrashRetentionDays };
   general: {
     businessName: string;
     clientIdPrefix: string;
@@ -38,6 +40,7 @@ export interface AppSettings {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  trash: { autoDeleteDays: 0 },
   payments: { enforceDailyMinimum: false },
   general: {
     businessName: 'MCL Dashboard', clientIdPrefix: 'mcl', clientIdDigits: 4,
@@ -71,6 +74,7 @@ export function validLayout(layout: PrintLayout): boolean {
 
 export function validateSettings(settings: AppSettings): string | null {
   const { general, index, promissory, studio } = settings;
+  if (![0, 3, 7, 30].includes(settings.trash.autoDeleteDays)) return 'Choose 3, 7 or 30 days, or do not automatically delete Trash.';
   if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,19}$/.test(general.clientIdPrefix)) return 'Client ID prefix must start with a letter and contain up to 20 letters, numbers, underscores or hyphens.';
   if (!Number.isInteger(general.clientIdDigits) || general.clientIdDigits < 1 || general.clientIdDigits > 10) return 'Client ID digits must be between 1 and 10.';
   if (![general.recentPaymentsLimit, general.dueClientsLimit].every((n) => Number.isInteger(n) && n >= 1 && n <= 100)) return 'Dashboard limits must be between 1 and 100.';
@@ -85,7 +89,7 @@ export function validateSettings(settings: AppSettings): string | null {
 /** Accept only known, correctly typed fields from shared Firestore documents. */
 export function mergeSettings(raw: Record<string, unknown>): AppSettings {
   const result = structuredClone(DEFAULT_SETTINGS);
-  for (const key of ['general', 'payments', 'index', 'promissory', 'studio'] as const) {
+  for (const key of ['general', 'payments', 'trash', 'index', 'promissory', 'studio'] as const) {
     const source = raw[key];
     if (!source || typeof source !== 'object') continue;
     if (key === 'studio') {

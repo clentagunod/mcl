@@ -12,8 +12,15 @@ import { printableTitles, renderPrintDocument, type PrintJob } from '../lib/prin
 import { paperDimensions, summaryClientName } from '../lib/printables';
 import { isISODate } from '../lib/dates';
 import { ClientPrintSearch, type PrintClientSelection } from '../components/ClientPrintSearch';
+import { Icon } from '../components/Icon';
+import './report-workspaces.css';
 
 const kinds: PrintableKind[] = ['index', 'promissory', 'summary'];
+const documentDescriptions: Record<PrintableKind, string> = {
+  index: 'Payment record for each borrower',
+  promissory: 'Loan agreement with borrower details',
+  summary: 'Collections for a selected date',
+};
 
 export default function PrintablesPage() {
   const { clients, payments, today, loading, error: dataError } = useData();
@@ -58,6 +65,10 @@ export default function PrintablesPage() {
   const missingNumbers = selected.some((c) => !c.transactionNumber || !c.clientNumber);
   const blocked = busy || loading || settingsLoading || !!settingsError || !!dataError || !layoutValid || !isISODate(date) || !source || !selected.length || missingNumbers;
 
+  function selectDocument(next: PrintableKind) {
+    setKind(next); setError(''); setNotice('');
+  }
+
   function reset() {
     setOverrides((previous) => ({ ...previous, [kind]: undefined }));
     setSummaryDate(''); setGrid(true); setZoom(75);
@@ -99,21 +110,27 @@ export default function PrintablesPage() {
   if (loading || settingsLoading) return <LoadingState />;
 
   return <>
-    <PageHeader title="Print studio" description="Prepare client documents and daily collection reports from live records." actions={isPrinting ? <Link className="btn" to="/settings">Template settings</Link> : undefined} />
-    <div className="studio-mode-bar">
+    <PageHeader title="Print studio" description="Choose a document, select your clients, then review and print." actions={isPrinting ? <Link className="btn" to="/settings"><Icon name="settings" /> Template settings</Link> : undefined} />
+    <div className="studio-mode-bar print-workspace-mode">
       <fieldset className="studio-mode-switch"><legend>Workspace mode</legend>
         <label className={isPrinting ? 'studio-mode active' : 'studio-mode'}><input type="radio" name="studio-mode" checked={isPrinting} onChange={() => { setMode('printing'); setMeasured(null); setNotice(''); setError(''); }} /> Printing Mode</label>
         <label className={!isPrinting ? 'studio-mode active' : 'studio-mode'}><input type="radio" name="studio-mode" checked={!isPrinting} onChange={() => { setMode('view'); setMeasured(null); setNotice(''); setError(''); }} /> View Only</label>
       </fieldset>
-      <p className="muted small">{isPrinting ? 'Select clients, prepare the layout and print or export.' : 'Inspect documents. Print, export and layout editing are hidden.'}</p>
+      <p className="muted small"><Icon name="info" />{isPrinting ? 'Print-ready documents using your saved templates.' : 'Review client documents without changing print options.'}</p>
     </div>
-    <div className="print-tabs" role="tablist" aria-label="Printable document">
-      {kinds.map((item) => <button key={item} type="button" role="tab" id={`tab-${item}`} aria-selected={kind === item} aria-controls="print-panel" className={kind === item ? 'print-tab selected' : 'print-tab'} onClick={() => { setKind(item); setError(''); setNotice(''); }}>{printableTitles[item]}</button>)}
+    <div className="studio-section-label"><span className="workspace-step">1</span><span>Choose a document</span></div>
+    <div className="print-tabs document-type-tabs" role="tablist" aria-label="Printable document">
+      {kinds.map((item, index) => <button key={item} type="button" role="tab" id={`tab-${item}`} aria-label={printableTitles[item]} aria-selected={kind === item} aria-controls="print-panel" tabIndex={kind === item ? 0 : -1} className={kind === item ? 'print-tab selected' : 'print-tab'} onClick={() => selectDocument(item)} onKeyDown={(event) => {
+        const next = event.key === 'ArrowRight' ? kinds[(index + 1) % kinds.length]
+          : event.key === 'ArrowLeft' ? kinds[(index + kinds.length - 1) % kinds.length]
+            : event.key === 'Home' ? kinds[0] : event.key === 'End' ? kinds[kinds.length - 1] : null;
+        if (next) { event.preventDefault(); selectDocument(next); document.getElementById(`tab-${next}`)?.focus(); }
+      }}><span className="document-type-icon"><Icon name={item === 'summary' ? 'wallet' : item === 'index' ? 'documents' : 'file'} /></span><span><strong>{printableTitles[item]}</strong><small>{documentDescriptions[item]}</small></span>{kind === item && <Icon name="check" className="document-type-check" />}</button>)}
     </div>
-    <section id="print-panel" role="tabpanel" aria-labelledby={`tab-${kind}`}>
+    <section id="print-panel" className="print-workspace-panel" role="tabpanel" aria-labelledby={`tab-${kind}`}>
       <div className="print-studio">
         <aside className="studio-controls card" aria-label="Document controls">
-          <h2>{isPrinting ? 'Document setup' : 'Document inspection'}</h2>
+          <div className="studio-section-label"><span className="workspace-step">2</span><h2>Choose clients</h2></div>
           <ClientPrintSearch clients={sortedClients} selectedIds={selectedIds} bulk={selection.bulk} onChange={setSelection} />
           {kind === 'summary' ? <>
             <FormField label="Collection date"><input type="date" value={date} max={today} onChange={(e) => setSummaryDate(e.target.value)} /></FormField>
@@ -121,17 +138,20 @@ export default function PrintablesPage() {
           </> : <>
             <p className="field-hint">{kind === 'index' ? 'Sequential paying days; no gaps for missed dates. Manual signature spaces stay blank.' : 'Client details fill the supplied note. IDs, co-maker information and signatures stay blank.'}</p>
           </>}
-          {isPrinting && <><div className="studio-divider" />
+          {isPrinting && <section className="studio-layout-section"><div className="studio-divider" />
+            <h3><Icon name="settings" /> Paper &amp; layout</h3>
+            <p className="field-hint">Your saved template is ready to use. Adjust only when needed.</p>
             <PrintLayoutFields value={layout} onChange={(value) => setOverrides((previous) => ({ ...previous, [kind]: value }))} />
-          </>}
+          </section>}
           {!layoutValid && <p className="alert alert-error" role="alert">Paper dimensions must be 70–600 mm, margins 0–30 mm and font size 6–18 pt.</p>}
-          <p className="field-hint">Paper: {dimensions.width.toFixed(1)} × {dimensions.height.toFixed(1)} mm. Changes here apply to this session. Set shared defaults in Settings.</p>
+          <p className="field-hint">Paper: {dimensions.width.toFixed(1)} × {dimensions.height.toFixed(1)} mm. Layout changes apply only to this session.</p>
           {isPrinting && <button type="button" className="btn btn-block" onClick={reset} disabled={busy}>Reset print options</button>}
         </aside>
         <div className="studio-main">
+          <div className="studio-preview-heading"><div className="studio-section-label"><span className="workspace-step">3</span><h2>{isPrinting ? 'Review & finish' : 'Document preview'}</h2></div><span className="studio-preview-status"><span className={previewReady && !measured?.overflow ? 'preview-status-dot ready' : 'preview-status-dot'} />{previewReady ? `${rendered.pages} ${rendered.pages === 1 ? 'page' : 'pages'} · ${selected.length} ${selected.length === 1 ? 'client' : 'clients'}` : selected.length ? 'Preparing preview' : 'Select a client'}</span></div>
           <div className="studio-actions card">
-            {isPrinting && <div className="studio-action-group"><button type="button" className="btn btn-primary" disabled={blocked || !previewReady || measured?.overflow} onClick={() => void print()}>Print</button><button type="button" className="btn" disabled={blocked || !previewReady || measured?.overflow} onClick={() => void print(true)}>Save PDF</button><button type="button" className="btn" disabled={blocked} onClick={() => void exportFile('docx')}>{busy ? 'Preparing…' : selected.length > 1 && kind !== 'summary' ? 'Export DOCX bundle' : 'Export DOCX'}</button><button type="button" className="btn" disabled={blocked} onClick={() => void exportFile('html')}>Export HTML</button></div>}
-            <div className="studio-action-group"><label className="check-label"><input type="checkbox" checked={grid} onChange={(e) => setGrid(e.target.checked)} /> Size grid</label><label className="zoom-control">Zoom<select value={zoom} onChange={(e) => setZoom(Number(e.target.value))}>{[40, 50, 60, 75, 100, 125].map((n) => <option key={n} value={n}>{n}%</option>)}</select></label><span className="muted small">{rendered.pages} {rendered.pages === 1 ? 'page' : 'pages'}</span></div>
+            {isPrinting && <div className="studio-output-actions"><div className="studio-action-group"><button type="button" className="btn btn-primary" disabled={blocked || !previewReady || measured?.overflow} onClick={() => void print()}><Icon name="print" />Print</button><button type="button" className="btn" title="Open the print dialog and choose Save as PDF" disabled={blocked || !previewReady || measured?.overflow} onClick={() => void print(true)}><Icon name="download" />Save PDF</button></div><div className="studio-action-group studio-export-actions" aria-label="Other export formats"><button type="button" className="btn" title="Download an editable Word document" disabled={blocked} onClick={() => void exportFile('docx')}>{busy ? 'Preparing…' : selected.length > 1 && kind !== 'summary' ? 'Export DOCX bundle' : 'Export DOCX'}</button><button type="button" className="btn" title="Download a standalone document to open in a browser" disabled={blocked} onClick={() => void exportFile('html')}>Export HTML</button></div></div>}
+            <div className="studio-preview-tools"><label className="check-label"><input type="checkbox" checked={grid} onChange={(e) => setGrid(e.target.checked)} /> Size grid</label><label className="zoom-control">Zoom<select value={zoom} onChange={(e) => setZoom(Number(e.target.value))}>{[40, 50, 60, 75, 100, 125].map((n) => <option key={n} value={n}>{n}%</option>)}</select></label><span className="muted small">Preview only</span></div>
           </div>
           {missingNumbers && <p className="alert alert-warning" role="status">Client numbers are being completed. If this persists, use “Complete existing client records” in Settings.</p>}
           {rendered.error && <p className="alert alert-error" role="alert">{rendered.error}</p>}

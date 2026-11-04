@@ -4,6 +4,9 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { SetupNotice } from './components/SetupNotice';
 import { missingEnvKeys } from './config/env';
 import './index.css';
+import { initializeTheme } from './lib/theme';
+
+initializeTheme();
 
 async function bootstrap() {
   const container = document.getElementById('root');

@@ -10,10 +10,10 @@ test('client pagination covers every row and page size, with correct boundaries'
   await expect(page.locator('tbody tr')).toHaveCount(25);
   await expect(navigation.getByRole('status')).toHaveText('Showing 1–25 of 65 clients');
   await expect(navigation.getByRole('button', { name: 'Previous' })).toBeDisabled();
-  const firstIds = await page.locator('tbody tr td:first-child .small:last-child').allTextContents();
+  const firstIds = await page.locator('tbody tr td:nth-child(2) .small:last-child').allTextContents();
   await navigation.getByRole('button', { name: 'Next' }).click();
   await expect(navigation.getByRole('status')).toHaveText('Showing 26–50 of 65 clients');
-  const nextIds = await page.locator('tbody tr td:first-child .small:last-child').allTextContents();
+  const nextIds = await page.locator('tbody tr td:nth-child(2) .small:last-child').allTextContents();
   expect(firstIds.filter((id) => nextIds.includes(id))).toEqual([]);
   await navigation.getByRole('button', { name: 'Last' }).click();
   await expect(page.locator('tbody tr')).toHaveCount(15);

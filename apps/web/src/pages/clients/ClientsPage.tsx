@@ -7,7 +7,9 @@ import { useData } from '../../context/DataContext';
 import { formatDate } from '../../lib/dates';
 import { formatClientName, type ClientRow } from '../../lib/loan';
 import { formatPeso } from '../../lib/money';
-import { deleteClient } from '../../services/clients';
+import { createTrashAction } from '../../services/client-trash';
+import { useClientSelection } from '../../hooks/useClientSelection';
+import { SelectionCheckbox } from '../../components/SelectionCheckbox';
 import type { Client, LoanStatus } from '../../types';
 import { ClientFormModal } from './ClientFormModal';
 import { PaymentsModal } from './PaymentsModal';
@@ -16,7 +18,10 @@ import { Link } from 'react-router-dom';
 import { Modal } from '../../components/Modal';
 import { useAuth } from '../../context/AuthContext';
 import { renewalEligibility } from '../../lib/renewal';
+import { isAdminRole } from '../../lib/roles';
 import { RenewalModal, RenewalHistoryModal } from './RenewalModal';
+import { Icon } from '../../components/Icon';
+import './clients.css';
 
 type StatusFilter = LoanStatus | 'all';
 
@@ -27,7 +32,7 @@ type ModalState =
   | { type: 'add' }
   | { type: 'edit'; client: Client }
   | { type: 'payments'; clientId: string }
-  | { type: 'delete'; client: Client }
+  | { type: 'delete'; count: number; name?: string; confirm: () => Promise<void> }
   | { type: 'address'; client: Client }
   | { type: 'renew'; clientId: string }
   | { type: 'renewal-history'; clientId: string }
@@ -49,6 +54,8 @@ export default function ClientsPage() {
   const [modal, setModal] = useState<ModalState>(null);
   const [pageSize, setPageSize] = useState(25);
   const [requestedPage, setRequestedPage] = useState(1);
+  const clientIds = useMemo(() => rows.map(row => row.client.id), [rows]);
+  const selection = useClientSelection(clientIds);
 
   const visibleRows = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -74,6 +81,10 @@ export default function ClientsPage() {
   if (loading) return <LoadingState />;
 
   const close = () => setModal(null);
+  const confirmTrash = (ids: string[], name?: string) => {
+    const action = createTrashAction('trash', ids.map(id => ({ id })));
+    setModal({ type: 'delete', count: ids.length, name, confirm: async () => { await action(); selection.clear(); } });
+  };
 
   return (
     <>
@@ -81,26 +92,31 @@ export default function ClientsPage() {
         title="Clients"
         description="Loans, outstanding balances and status. Balances update live as collectors enter payments."
         actions={
-          <button type="button" className="btn btn-primary" onClick={() => setModal({ type: 'add' })}>
-            + Add client
-          </button>
+          <div className="selection-actions">
+            <Link className="btn" to="/trash"><Icon name="trash" size={15} />Trash</Link>
+            <button type="button" className="btn btn-primary" onClick={() => setModal({ type: 'add' })}>
+              <Icon name="plus" size={16} /> Add client
+            </button>
+          </div>
         }
       />
 
-      <section className="card">
+      <section className="card clients-directory" aria-label="Client directory">
         {error && <p className="alert alert-error" role="alert">{error}</p>}
-        <div className="toolbar">
+        <div className="toolbar clients-toolbar">
+          <div className="clients-search"><Icon name="search" size={17} />
           <input
             type="search"
             placeholder="Search name, number or address"
             aria-label="Search clients"
             value={search}
-            onChange={(event) => { setSearch(event.target.value); setRequestedPage(1); }}
+            onChange={(event) => { setSearch(event.target.value); setRequestedPage(1); selection.clear(); }}
           />
+          </div>
           <select
             aria-label="Filter by status"
             value={statusFilter}
-            onChange={(event) => { setStatusFilter(event.target.value as StatusFilter); setRequestedPage(1); }}
+            onChange={(event) => { setStatusFilter(event.target.value as StatusFilter); setRequestedPage(1); selection.clear(); }}
           >
             <option value="all">All statuses</option>
             <option value="due">Due</option>
@@ -112,71 +128,71 @@ export default function ClientsPage() {
           </span>
         </div>
 
+        <div className="bulk-actions" aria-label="Client selection">
+          <span role="status">{selection.selectedIds.length} selected</span>
+          <button type="button" className="btn btn-small" disabled={!visibleRows.length} onClick={() => selection.selectAll(visibleRows.map(row => row.client.id))}>Select all {visibleRows.length} matching</button>
+          <button type="button" className="btn btn-small" disabled={!selection.selectedIds.length} onClick={selection.clear}>Clear selection</button>
+          <button type="button" className="btn btn-small btn-danger-outline" disabled={!selection.selectedIds.length || !!error} onClick={() => confirmTrash(selection.selectedIds)}>Move selected to Trash</button>
+        </div>
+
         {visibleRows.length === 0 ? (
           <EmptyState>
             {rows.length === 0 ? 'No clients yet. Click “Add client” to create the first one.' : 'No clients match your search.'}
           </EmptyState>
         ) : (
-          <div className="table-wrap">
-            <table>
+          <div className="table-wrap clients-table-wrap" tabIndex={0} aria-label="Client records">
+            <table className="clients-table">
+              <colgroup><col className="client-select-col" /><col className="client-identity-col" /><col className="client-loan-col" /><col className="client-balance-col" /><col className="client-schedule-col" /><col className="client-status-col" /><col className="client-actions-col" /></colgroup>
               <thead>
                 <tr>
+                  <th className="selection-col"><SelectionCheckbox label="Select clients on this page" checked={pageRows.length > 0 && pageRows.every(row => selection.selected.has(row.client.id))} mixed={pageRows.some(row => selection.selected.has(row.client.id)) && !pageRows.every(row => selection.selected.has(row.client.id))} onChange={() => selection.togglePage(pageRows.map(row => row.client.id))} /></th>
                   <th>Client</th>
-                  <th>Cellphone</th>
-                  <th className="num">Principal</th>
-                  <th className="num">Interest</th>
-                  <th className="num">Daily payable</th>
-                  <th className="num">Outstanding</th>
-                  <th>Loan</th>
-                  <th>Approved</th>
-                  <th>Due date</th>
+                  <th className="num">Loan amount</th>
+                  <th className="num">Balance</th>
+                  <th>Schedule</th>
                   <th>Status</th>
                   <th className="actions-col">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {pageRows.map(({ client, summary }) => (
-                  <tr key={client.id}>
-                    <td>
-                      <strong>{formatClientName(client)}</strong>
-                      <button type="button" className="client-address muted small" title={client.address} aria-label={`View full address for ${formatClientName(client)}`} onClick={() => setModal({ type: 'address', client })}>{client.address}</button>
+                  <tr key={client.id} className={selection.selected.has(client.id) ? 'row-selected' : undefined}>
+                    <td className="selection-col"><SelectionCheckbox label={`Select ${formatClientName(client)}`} checked={selection.selected.has(client.id)} onChange={() => selection.toggle(client.id)} /></td>
+                    <td className="client-identity">
+                      <strong title={formatClientName(client)}>{formatClientName(client)}</strong>
+                      <div className="client-contact"><span>{client.cellphone}</span><button type="button" className="client-address-link" title={client.address} aria-label={`View full address for ${formatClientName(client)}`} onClick={() => setModal({ type: 'address', client })}><Icon name="info" size={13} />Address</button></div>
                       <div className="muted small">{publicClientId(client)} · Txn {client.transactionNumber || 'Pending'}</div>
-                      {!!client.renewalCount && profile?.role === 'admin' && <button type="button" className="renewal-tag" onClick={() => setModal({ type: 'renewal-history', clientId: client.id })}>Renewal history · {client.renewalCount}</button>}
+                      {!!client.renewalCount && isAdminRole(profile?.role) && <button type="button" className="renewal-tag" onClick={() => setModal({ type: 'renewal-history', clientId: client.id })}>Renewal history · {client.renewalCount}</button>}
                     </td>
-                    <td>{client.cellphone}</td>
-                    <td className="num">{formatPeso(client.principal)}</td>
-                    <td className="num">{formatPeso(client.interest)}</td>
-                    <td className="num">{formatPeso(dailyPayable(client))}</td>
+                    <td className="num"><strong>{formatPeso(client.principal)}</strong><span className="client-cell-detail">+ {formatPeso(client.interest)} interest</span></td>
                     <td className="num">
                       <strong>{formatPeso(summary.outstanding)}</strong>
+                      <span className="client-cell-detail">{formatPeso(dailyPayable(client))} / day</span>
                     </td>
-                    <td>
-                      {client.loanTermDays} days
-                      <div className="muted small">
-                        Day {summary.daysElapsed} of {client.loanTermDays}
-                      </div>
+                    <td className="client-schedule">
+                      <strong>Due {formatDate(summary.dueDate)}</strong>
+                      <span className="client-cell-detail">Approved {formatDate(client.approvalDate)}</span>
+                      <span className="client-cell-detail">Day {summary.daysElapsed} of {client.loanTermDays}</span>
                     </td>
-                    <td>{formatDate(client.approvalDate)}</td>
-                    <td>{formatDate(summary.dueDate)}</td>
                     <td>
                       <StatusBadge status={summary.status} />
                     </td>
-                    <td className="actions-col">
-                      {summary.status === 'paid' && profile?.role === 'admin' && (() => {
+                    <td className="actions-col"><div className="client-row-actions">
+                      {summary.status === 'paid' && isAdminRole(profile?.role) && (() => {
                         const eligibility = renewalEligibility(client, payments, holidayDates, today);
                         return <button type="button" className="btn btn-small btn-primary" disabled={!eligibility.eligible || !!error || !client.transactionNumber} title={eligibility.reason} onClick={() => setModal({ type: 'renew', clientId: client.id })}>Renew</button>;
                       })()}{' '}
-                      <Link className="btn btn-small" to={`/printables?client=${encodeURIComponent(client.id)}`}>Print</Link>{' '}
+                      <Link className="btn btn-small" to={`/printables?client=${encodeURIComponent(client.id)}`} title="Prepare this client's documents"><Icon name="print" size={13} />Print</Link>{' '}
                       <button type="button" className="btn btn-small" onClick={() => setModal({ type: 'payments', clientId: client.id })}>
-                        Payments
+                        <Icon name="wallet" size={13} />Payments
                       </button>{' '}
                       <button type="button" className="btn btn-small" onClick={() => setModal({ type: 'edit', client })}>
-                        Edit
+                        <Icon name="file" size={13} />Edit
                       </button>{' '}
-                      <button type="button" className="btn btn-small btn-danger-outline" disabled={!!client.renewalCount} title={client.renewalCount ? 'Clients with renewal history are retained for audit.' : undefined} onClick={() => setModal({ type: 'delete', client })}>
-                        Delete
+                      <button type="button" className="btn btn-small btn-danger-outline" disabled={!!error} onClick={() => confirmTrash([client.id], formatClientName(client))}>
+                        <Icon name="trash" size={13} />Delete
                       </button>
-                    </td>
+                    </div></td>
                   </tr>
                 ))}
               </tbody>
@@ -213,11 +229,11 @@ export default function ClientsPage() {
       </Modal>}
       {modal?.type === 'delete' && (
         <ConfirmDialog
-          title="Delete client"
-          message={`Permanently delete ${formatClientName(modal.client)} and ALL of their payment records? This cannot be undone.`}
-          confirmLabel="Delete client"
+          title="Move to Trash"
+          message={`Move ${modal.name || `${modal.count} selected clients`} to Trash? They will leave the active client list and reports. Their payments and renewal history will be kept so you can restore them from Trash.`}
+          confirmLabel="Move to Trash"
           danger
-          onConfirm={() => deleteClient(modal.client.id)}
+          onConfirm={modal.confirm}
           onClose={close}
         />
       )}

@@ -35,6 +35,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [clients.data]);
 
   const holidayDates = useMemo(() => new Set(holidays.data.map((holiday) => holiday.date)), [holidays.data]);
+  // Recycled clients retain their ledger for restoration, but leave active reports.
+  const activePayments = useMemo(() => {
+    const ids = new Set(clients.data.map(client => client.id));
+    return payments.data.filter(payment => ids.has(payment.clientId));
+  }, [clients.data, payments.data]);
 
   const rows = useMemo(
     () => buildClientRows(clients.data, payments.data, holidayDates, today),
@@ -44,7 +49,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const value = useMemo<DataContextValue>(
     () => ({
       clients: clients.data,
-      payments: payments.data,
+      payments: activePayments,
       collectors: collectors.data,
       holidays: holidays.data,
       rows,
@@ -53,7 +58,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       error: clients.error ?? payments.error ?? collectors.error ?? holidays.error ?? completionError
         ?? (clients.fresh && payments.fresh && collectors.fresh && holidays.fresh ? null : 'Displayed records are awaiting server confirmation. Payment entry and renewals require confirmed live data.'),
     }),
-    [clients, payments, collectors, holidays, rows, today, completionError],
+    [clients, payments, activePayments, collectors, holidays, rows, today, completionError],
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

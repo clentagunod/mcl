@@ -29,7 +29,7 @@ export function ConfirmDialog({ title, message, confirmLabel, danger = false, on
   }
 
   return (
-    <Modal title={title} onClose={onClose}>
+    <Modal title={title} onClose={onClose} dismissible={!busy}>
       <p>{message}</p>
       {error && (
         <p className="alert alert-error" role="alert">

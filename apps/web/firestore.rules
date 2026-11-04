@@ -3,10 +3,11 @@ rules_version = '2';
 // MCL Dashboard - Firestore security rules
 //
 // Roles live in the "users" collection (document id = Firebase Auth uid):
-//   { role: "admin" | "collector", active: boolean, ... }
+//   { role: "admin" | "collector" | "developer", active: boolean, ... }
 //
 // The FIRST admin document must be created by hand in the Firebase Console
-// (see README). Rules never let the web app create or change an admin.
+// (see README). Active admins can then manage collector and admin profiles.
+// Developer profiles are managed only through privileged Console/Admin SDK access.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -27,7 +28,7 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return hasProfile() && profile().role == 'admin'
+      return hasProfile() && profile().role in ['admin', 'developer']
         && profile().get('active', true) == true;
     }
 
@@ -35,12 +36,6 @@ service cloud.firestore {
       return hasProfile()
         && profile().role == 'collector'
         && profile().get('active', true) == true;
-    }
-
-    // Enable only after the callable and compatible web/APK builds are released.
-    function directReceiptsEnabled() {
-      let path = /databases/$(database)/documents/settings/Configurations/elements/receiptPolicy;
-      return !exists(path) || get(path).data.get('backendOnly', false) != true;
     }
 
     // A payment entry as the collector app is allowed to create it.
@@ -115,49 +110,187 @@ service cloud.firestore {
 
     function validCycleReceipt(d) {
       let c = get(/databases/$(database)/documents/clients/$(d.clientId)).data;
-      return currentLoanReceipt(d)
-        && (c.get('activeLoanId', 'initial') == 'initial' ||
-          (d.paymentDate >= c.approvalDate && d.createdAt == request.time));
+      return currentLoanReceipt(d) && d.paymentDate >= c.get('approvalDate', '0001-01-01');
     }
 
-    // ---- users (admin + collector profiles) ---------------------------------
-    match /users/{uid} {
-      // A person can read their own profile; admins can read all.
-      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
-      allow list: if isAdmin();
+    function clientPath(clientId) {
+      return /databases/$(database)/documents/clients/$(clientId);
+    }
 
-      // The web app may only create/modify/delete COLLECTOR profiles.
-      allow create: if isAdmin() && request.resource.data.role == 'collector';
+    function trashPath(clientId) {
+      return /databases/$(database)/documents/clientTrash/$(clientId);
+    }
+
+    function clientPurging(clientId) {
+      return !exists(clientPath(clientId)) && exists(trashPath(clientId))
+        && get(trashPath(clientId)).data.status == 'purging';
+    }
+
+    function restoredClient(clientId) {
+      let archived = get(trashPath(clientId)).data;
+      return exists(trashPath(clientId)) && !existsAfter(trashPath(clientId))
+        && archived.status == 'trashed'
+        && request.resource.data.diff(archived.client).affectedKeys().hasOnly(['updatedAt'])
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function loanSnapshotMatches(loan, clientId, c) {
+      return loan.id == clientId
+        && loan.principal == c.principal && loan.interest == c.interest
+        && loan.loanTermDays == c.loanTermDays && loan.approvalDate == c.approvalDate
+        && loan.transactionNumber == c.get('transactionNumber', '')
+        && loan.activeLoanId == c.get('activeLoanId', 'initial')
+        && loan.renewalCount == c.get('renewalCount', 0)
+        && loan.originalTransactionNumber == c.get('originalTransactionNumber', c.get('transactionNumber', ''))
+        && loan.clientNumber == c.get('clientNumber', clientId)
+        && loan.firstName == c.get('firstName', '') && loan.lastName == c.get('lastName', '')
+        && loan.middleName == c.get('middleName', '') && loan.address == c.get('address', '')
+        && loan.cellphone == c.get('cellphone', '');
+    }
+
+    function validRenewalRecord(clientId, renewalId) {
+      let before = get(clientPath(clientId)).data;
+      let after = getAfter(clientPath(clientId)).data;
+      let r = request.resource.data;
+      return exists(clientPath(clientId)) && existsAfter(clientPath(clientId))
+        && r.keys().hasAll(['sequence', 'previousLoan', 'newLoan', 'totalPaid', 'paidOn', 'dueDate', 'newDueDate', 'approvedBy', 'approvedByName', 'notes', 'createdAt'])
+        && r.approvedBy == request.auth.uid && r.approvedByName == profile().get('fullName', '')
+        && r.createdAt == request.time && r.notes is string && r.notes.size() <= 1500
+        && r.sequence == before.get('renewalCount', 0) + 1 && after.renewalCount == r.sequence
+        && after.activeLoanId == renewalId && after.transactionNumber == renewalId
+        && before.get('activeLoanId', 'initial') != renewalId
+        && loanSnapshotMatches(r.previousLoan, clientId, before)
+        && loanSnapshotMatches(r.newLoan, clientId, after)
+        && r.totalPaid is number && r.totalPaid >= before.principal + before.interest
+        && r.paidOn is string && r.paidOn.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && r.dueDate is string && r.dueDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && r.newDueDate is string && r.newDueDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && r.paidOn >= before.approvalDate && r.paidOn <= r.dueDate && r.paidOn <= after.approvalDate
+        && r.newDueDate >= after.approvalDate;
+    }
+
+    function validRenewalTransition(clientId) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let history = /databases/$(database)/documents/clients/$(clientId)/renewals/$(after.activeLoanId);
+      return after.diff(before).affectedKeys().hasOnly(['principal', 'interest', 'loanTermDays', 'approvalDate', 'dailyAmount', 'transactionNumber', 'originalTransactionNumber', 'activeLoanId', 'renewalCount', 'updatedAt'])
+        && after.activeLoanId is string && after.activeLoanId.matches('^[0-9]{5}$')
+        && after.transactionNumber == after.activeLoanId
+        && after.renewalCount == before.get('renewalCount', 0) + 1
+        && after.originalTransactionNumber == before.get('originalTransactionNumber', before.get('transactionNumber', ''))
+        && validMoney(after.principal) && after.interest is number && after.interest >= 0
+        && after.interest <= 999999999 && math.round(after.interest * 100) / 100.0 == after.interest
+        && validMoney(after.dailyAmount) && after.loanTermDays in [45, 50, 58]
+        && validPaymentDate(after.approvalDate, clientId) && after.updatedAt == request.time
+        && !exists(history) && existsAfter(history)
+        && getAfter(history).data.approvedBy == request.auth.uid
+        && getAfter(history).data.sequence == after.renewalCount;
+    }
+
+    // ---- users -------------------------------------------------------------
+    match /users/{uid} {
+      // Developer profiles stay private except for their owner's sign-in check.
+      // Account queries must explicitly select collector/admin roles.
+      allow get: if signedIn() && (request.auth.uid == uid
+        || (isAdmin() && resource.data.role in ['collector', 'admin']));
+      allow list: if isAdmin() && resource.data.role in ['collector', 'admin'];
+
+      // Existing admins provision accounts. Profiles cannot change roles or login emails.
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasAll(['role', 'fullName', 'email', 'phone', 'active', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['role', 'fullName', 'email', 'phone', 'active', 'createdAt'])
+        && request.resource.data.role in ['collector', 'admin']
+        && request.resource.data.fullName is string && request.resource.data.fullName.size() > 0
+        && request.resource.data.email is string && request.resource.data.email.size() > 0
+        && request.resource.data.phone is string
+        && request.resource.data.active == true
+        && request.resource.data.createdAt == request.time;
       allow update: if isAdmin()
-        && resource.data.role == 'collector'
-        && request.resource.data.role == 'collector';
-      allow delete: if isAdmin() && resource.data.role == 'collector';
+        && resource.data.role in ['collector', 'admin']
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fullName', 'phone', 'active'])
+        && request.resource.data.fullName is string && request.resource.data.fullName.size() > 0
+        && request.resource.data.get('phone', '') is string
+        && request.resource.data.get('active', true) is bool
+        && (request.auth.uid != uid || request.resource.data.get('active', true) == true);
+      // Enforced here as well as in the UI so direct SDK requests cannot bypass it.
+      allow delete: if isAdmin() && request.auth.uid != uid
+        && resource.data.role in ['collector', 'admin'];
     }
 
     // ---- clients ------------------------------------------------------------
     match /clients/{clientId} {
       allow read: if isAdmin() || isActiveCollector();
-      allow create: if isAdmin() && !request.resource.data.keys().hasAny(['activeLoanId', 'renewalCount', 'originalTransactionNumber']);
-      // Only the trusted renewal function can move a client into another loan cycle.
-      allow update: if isAdmin() && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['activeLoanId', 'renewalCount', 'originalTransactionNumber']);
-      allow delete: if isAdmin() && resource.data.get('renewalCount', 0) == 0;
+      allow create: if isAdmin() && ((!exists(trashPath(clientId))
+        && !request.resource.data.keys().hasAny(['activeLoanId', 'renewalCount', 'originalTransactionNumber'])) || restoredClient(clientId));
+      allow update: if isAdmin() && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['activeLoanId', 'renewalCount', 'originalTransactionNumber'])
+        || validRenewalTransition(clientId));
+      // Recycling must preserve the complete original document atomically.
+      allow delete: if isAdmin() && existsAfter(trashPath(clientId))
+        && getAfter(trashPath(clientId)).data.client == resource.data
+        && getAfter(trashPath(clientId)).data.status == 'trashed'
+        && getAfter(trashPath(clientId)).data.deletedAt == request.time;
       match /renewals/{renewalId} {
         allow read: if isAdmin();
-        // Immutable audit records are written by the server function only.
-        allow write: if false;
+        allow create: if isAdmin() && validRenewalRecord(clientId, renewalId);
+        allow update: if false;
+        allow delete: if isAdmin() && clientPurging(clientId);
       }
+    }
+
+    // Spark-compatible atomic recycle/restore, with resumable permanent deletion.
+    match /clientTrash/{clientId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && exists(clientPath(clientId)) && !existsAfter(clientPath(clientId))
+        && request.resource.data.keys().hasOnly(['client', 'trashId', 'deletedAt', 'deletedBy', 'deletedByName', 'status'])
+        && request.resource.data.client == get(clientPath(clientId)).data
+        && request.resource.data.trashId is string && request.resource.data.trashId.size() > 0
+        && request.resource.data.deletedAt == request.time && request.resource.data.deletedBy == request.auth.uid
+        && request.resource.data.deletedByName == profile().get('fullName', '') && request.resource.data.status == 'trashed';
+      allow update: if isAdmin() && !exists(clientPath(clientId))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'purgeOperationId'])
+        && request.resource.data.status == 'purging' && request.resource.data.purgeOperationId is string
+        && (resource.data.status == 'trashed' || (resource.data.status == 'purging'
+          && request.resource.data.purgeOperationId == resource.data.purgeOperationId));
+      allow delete: if isAdmin() && ((resource.data.status == 'trashed' && existsAfter(clientPath(clientId))
+        && getAfter(clientPath(clientId)).data.diff(resource.data.client).affectedKeys().hasOnly(['updatedAt'])
+        && getAfter(clientPath(clientId)).data.updatedAt == request.time) || clientPurging(clientId));
+    }
+    match /clientTrashOperations/{operationId} {
+      allow get: if isAdmin();
+      allow create: if isAdmin() && request.resource.data.keys().hasOnly(['operation', 'requestKey', 'actorId', 'status', 'updatedAt'])
+        && request.resource.data.operation in ['trash', 'restore', 'purge']
+        && request.resource.data.requestKey is string && request.resource.data.actorId == request.auth.uid
+        && request.resource.data.status in ['pending', 'complete'] && request.resource.data.updatedAt == request.time;
+      allow update: if isAdmin() && resource.data.status == 'pending'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+        && request.resource.data.status in ['pending', 'complete'] && request.resource.data.updatedAt == request.time;
     }
 
     // ---- payments (principal repayments) --------------------------------------
     match /payments/{paymentId} {
       allow read: if isAdmin() || isActiveCollector();
       // Collectors can only ADD entries under their own uid; corrections are admin-only.
-      allow create: if directReceiptsEnabled() && validReceiptFields(request.resource.data) && validCycleReceipt(request.resource.data)
+      allow create: if !exists(/databases/$(database)/documents/receiptDeletions/$(paymentId))
+        && request.resource.data.createdAt == request.time && validReceiptFields(request.resource.data) && validCycleReceipt(request.resource.data)
         && (isAdmin() || (isActiveCollector() && isValidNewPayment()));
-      allow update: if directReceiptsEnabled() && isAdmin() && validReceiptFields(request.resource.data) && currentLoanReceipt(resource.data)
+      allow update: if isAdmin() && validReceiptFields(request.resource.data) && currentLoanReceipt(resource.data)
         && validCycleReceipt(request.resource.data)
-        && request.resource.data.clientId == resource.data.clientId;
-      allow delete: if directReceiptsEnabled() && isAdmin() && currentLoanReceipt(resource.data);
+        && request.resource.data.clientId == resource.data.clientId
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.collectorId == resource.data.collectorId
+        && request.resource.data.collectorName == resource.data.collectorName;
+      allow delete: if isAdmin() && (clientPurging(resource.data.clientId) || (currentLoanReceipt(resource.data)
+        && getAfter(/databases/$(database)/documents/receiptDeletions/$(paymentId)).data.payment == resource.data));
+    }
+
+    match /receiptDeletions/{paymentId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && exists(/databases/$(database)/documents/payments/$(paymentId))
+        && !existsAfter(/databases/$(database)/documents/payments/$(paymentId))
+        && request.resource.data.keys().hasOnly(['clientId', 'payment', 'deletedBy', 'deletedAt'])
+        && request.resource.data.payment == get(/databases/$(database)/documents/payments/$(paymentId)).data
+        && request.resource.data.clientId == request.resource.data.payment.clientId
+        && request.resource.data.deletedBy == request.auth.uid && request.resource.data.deletedAt == request.time;
     }
 
     match /receiptAudit/{operationId} {

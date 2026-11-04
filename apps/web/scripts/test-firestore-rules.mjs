@@ -16,7 +16,8 @@ mkdirSync(environment.FIREBASE_EMULATORS_PATH, { recursive: true });
 const child = spawn(process.execPath, [
   path.join(root, 'node_modules', 'firebase-tools', 'lib', 'bin', 'firebase.js'),
   'emulators:exec', '--project', 'demo-mcl-policy', '--config', 'firebase.emulator.json', '--only', 'firestore',
-  process.argv.includes('--renewals') ? 'node --test --test-concurrency=1 tests/firestore-policy.rules.mjs functions/tests/renewal.emulator.mjs functions/tests/receipt.emulator.mjs' : 'node --test tests/firestore-policy.rules.mjs',
+  process.argv.includes('--spark') || process.argv.includes('--renewals')
+    ? 'node scripts/run-spark-tests.mjs' : 'node --test tests/firestore-policy.rules.mjs',
 ], { cwd: root, env: environment, stdio: 'inherit', windowsHide: true });
 child.on('error', (error) => { console.error(error.message); process.exitCode = 1; });
 child.on('exit', (code) => { process.exitCode = code ?? 1; });

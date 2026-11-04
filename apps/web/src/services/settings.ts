@@ -6,6 +6,7 @@ const paths = {
   general: ['Configurations', 'general'], index: ['Printables', 'indexTemplate'],
   promissory: ['Printables', 'promissoryTemplate'], studio: ['Printables', 'studio'],
   payments: ['Configurations', 'paymentPolicy'],
+  trash: ['Configurations', 'trashPolicy'],
 } as const;
 
 export function subscribeSettings(onData: (settings: AppSettings) => void, onError: (error: unknown) => void) {

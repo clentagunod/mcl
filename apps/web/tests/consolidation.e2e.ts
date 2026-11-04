@@ -55,15 +55,15 @@ test('payments beyond day 58 remain in history and all totals', async ({ page })
   await expect(dialog).toContainText('₱6,000.00');
 });
 
-test('long addresses stay on one line and open in a readable full-address dialog', async ({ page }) => {
+test('long addresses keep rows compact and open in a readable full-address dialog', async ({ page }) => {
   await page.goto('/tests/fixtures/print-studio.html?view=clients&longaddress=1');
-  const address = page.locator('.client-address').first();
+  const address = page.getByRole('button', { name: /View full address for/ }).first();
   const geometry = await address.evaluate((element) => ({ width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height, contentWidth: element.scrollWidth, rowHeight: element.closest('tr')!.getBoundingClientRect().height }));
   expect(geometry.width).toBeLessThanOrEqual(250);
   expect(geometry.height).toBeLessThan(25);
-  expect(geometry.contentWidth).toBeGreaterThan(geometry.width);
   expect(geometry.rowHeight).toBeLessThan(110);
   const text = await address.getAttribute('title');
+  expect(text!.length).toBeGreaterThan(2000);
   await address.click();
   await expect(page.getByRole('dialog').locator('.address-full')).toHaveText(text!);
   expect(await page.getByRole('dialog').evaluate((element) => element.scrollWidth <= element.clientWidth + 2)).toBe(true);

@@ -13,6 +13,7 @@ import { hasGoodRenewalHistory, renewalEligibility, validateRenewalTerms } from 
 import { renewClient, subscribeRenewals } from '../../services/renewals';
 import type { Client, RenewalRecord } from '../../types';
 import { loanId } from '../../lib/loan-cycle';
+import { isAdminRole } from '../../lib/roles';
 
 function useRenewalHistory(client: Client | undefined) {
   const [records, setRecords] = useState<RenewalRecord[]>([]);
@@ -89,7 +90,7 @@ export function RenewalModal({ clientId, onClose }: { clientId: string; onClose:
   const [openedLoanId] = useState(() => client ? loanId(client) : null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  if (!client || profile?.role !== 'admin') return null;
+  if (!client || !isAdminRole(profile?.role)) return null;
   const eligibility = renewalEligibility(client, payments, new Set(holidays.map((h) => h.date)), today);
   const loanChanged = loanId(client) !== openedLoanId;
   const ready = !dataLoading && !dataError && !loanChanged && eligibility.eligible && !history.loading && !history.error && history.records.length === (client.renewalCount || 0) && hasGoodRenewalHistory(history.records);

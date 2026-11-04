@@ -11,6 +11,8 @@ beforeEach(async () => {
   await fetch('http://127.0.0.1:8188/emulator/v1/projects/demo-mcl-policy/databases/(default)/documents', { method: 'DELETE' });
   await Promise.all([
     db.doc('users/admin').set({ role: 'admin', fullName: 'Administrator' }),
+    db.doc('users/developer').set({ role: 'developer', fullName: 'Developer', active: true }),
+    db.doc('users/inactive-developer').set({ role: 'developer', active: false }),
     db.doc('users/collector').set({ role: 'collector', fullName: 'Verified Collector', active: true }),
     db.doc('users/inactive').set({ role: 'admin', active: false }),
     db.doc('clients/c').set({ principal: 100, interest: 0, loanTermDays: 45, dailyAmount: 25, approvalDate: '2026-11-01' }),
@@ -38,7 +40,7 @@ test('a concurrent duplicate, lost acknowledgement, and later retry never duplic
   assert.equal((await db.collection('receiptAudit').get()).size, 2);
 });
 test('rejects forged actor access, invalid money/dates, and collector corrections', async () => {
-  for (const uid of ['', 'missing', 'inactive']) await assert.rejects(create('denied', {}, uid));
+  for (const uid of ['', 'missing', 'inactive', 'inactive-developer']) await assert.rejects(create('denied', {}, uid));
   for (const patch of [{ amount: Infinity }, { amount: 0.001 }, { paymentDate: '2026-02-30' }, { paymentDate: '2026-11-03' }, { paymentDate: '2026-10-31' }]) await assert.rejects(create('invalid', patch));
   await create('a');
   await assert.rejects(mutateReceipt(db, 'collector', { operation: 'correct', id: 'a', operationId: 'correction', input: input(), expected: input() }, '2026-11-02'));
@@ -50,6 +52,26 @@ test('minimum policy allows administrator final settlements and remains current 
   await assert.rejects(create('collector-final', { amount: 10 }), /minimum/);
   await create('admin-final', { amount: 10 }, 'admin');
   assert.equal((await db.collection('payments').get()).size, 2);
+});
+
+test('developers can create, correct, and delete receipts with administrator settlement permissions', async () => {
+  await db.doc('settings/Configurations/elements/paymentPolicy').set({ enforceDailyMinimum: true });
+  await create('developer-payment', { amount: 10 }, 'developer');
+  const original = (await db.doc('payments/developer-payment').get()).data();
+  assert.equal(original.collectorId, 'developer');
+  assert.equal(original.collectorName, 'Developer');
+  await mutateReceipt(db, 'developer', {
+    operation: 'correct', id: 'developer-payment', operationId: 'developer-correction',
+    input: input({ amount: 5 }), expected: original,
+  }, '2026-11-02');
+  const corrected = (await db.doc('payments/developer-payment').get()).data();
+  assert.equal(corrected.amount, 5);
+  assert.equal(corrected.updatedBy, 'developer');
+  await mutateReceipt(db, 'developer', {
+    operation: 'delete', id: 'developer-payment', operationId: 'developer-deletion', expected: corrected,
+  }, '2026-11-02');
+  assert.equal((await db.doc('payments/developer-payment').get()).exists, false);
+  assert.equal((await db.doc('receiptAudit/developer-deletion').get()).data().actorId, 'developer');
 });
 test('corrections retain original entry time and actor, check stale edits, and write immutable before/after events', async () => {
   await create('a'); const old = (await db.doc('payments/a').get()).data();

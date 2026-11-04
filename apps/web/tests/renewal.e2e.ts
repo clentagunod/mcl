@@ -13,7 +13,7 @@ test('only fully paid loans show Renew; late settlement is disabled and unpaid l
   await expect(late.getByRole('button', { name: 'Renew', exact: true })).toBeDisabled();
   await expect(late.getByRole('button', { name: 'Renew', exact: true })).toHaveAttribute('title', /after its due date/);
   await expect(pending.getByRole('button', { name: 'Renew', exact: true })).toHaveCount(0);
-  await expect(pending.getByRole('button', { name: 'Delete', exact: true })).toBeDisabled();
+  await expect(pending.getByRole('button', { name: 'Delete', exact: true })).toBeEnabled();
   await pending.getByRole('button', { name: /Renewal history/ }).click();
   await expect(page.getByRole('dialog')).toContainText('Renewal history');
 });
@@ -24,7 +24,27 @@ test('collector views cannot grant renewals or inspect private renewal history',
   await expect(page.getByRole('button', { name: /Renewal history/ })).toHaveCount(0);
 });
 
-test('admin must review the new terms and explicitly approve before a callable request', async ({ page }) => {
+test('developer views have the same renewal actions as admins', async ({ page }) => {
+  await page.goto('/tests/fixtures/print-studio.html?view=clients&renewal=developer');
+  await expect(page.locator('tbody tr').filter({ hasText: 'mcl0003' }).getByRole('button', { name: /Renewal history/ })).toBeVisible();
+  await page.locator('tbody tr').filter({ hasText: 'mcl0001' }).getByRole('button', { name: 'Renew', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('heading', { name: /Renew loan/ })).toBeVisible();
+  const grant = dialog.getByRole('button', { name: 'Grant renewal', exact: true });
+  await expect(grant).toBeDisabled();
+  await dialog.getByRole('checkbox').check();
+  await expect(grant).toBeEnabled();
+});
+
+test('admin must review the new terms and explicitly approve before a renewal transaction', async ({ page }) => {
+  await page.route('**/src/services/renewals.ts', route => route.fulfill({ contentType: 'text/javascript', body: `
+    export function subscribeRenewals(_id, onData) { onData([]); return () => {}; }
+    export async function renewClient(client, terms, notes) {
+      const response = await fetch('/test-api/renew-client', { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ clientId: client.id, expectedLoanId: client.activeLoanId || 'initial', expectedTransactionNumber: client.transactionNumber || '', terms, notes }) });
+      if (!response.ok) throw new Error('Renewal failed');
+    }
+  ` }));
   await page.goto('/tests/fixtures/print-studio.html?view=clients&renewal=admin');
   await page.locator('tbody tr').filter({ hasText: 'mcl0001' }).getByRole('button', { name: 'Renew', exact: true }).click();
   const dialog = page.getByRole('dialog');
@@ -43,8 +63,8 @@ test('admin must review the new terms and explicitly approve before a callable r
   await expect(approval).not.toBeChecked();
   await approval.check();
   let payload: Record<string, unknown> | undefined;
-  await page.route('**/asia-southeast1-*.cloudfunctions.net/renewClient', async (route) => {
-    payload = route.request().postDataJSON().data;
+  await page.route('**/test-api/renew-client', async (route) => {
+    payload = route.request().postDataJSON();
     await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ result: { renewalId: '00004', transactionNumber: '00004' } }) });
   });
   await grant.click();

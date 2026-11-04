@@ -26,21 +26,29 @@ never reduce the new balance or carry over as credit. Any prior excess remains i
 The **Renewal history** tag opens a timeline with each approval, administrator,
 notes, new terms, due date at approval, previous terms, settlement date, closing
 balance and previous receipt ledger. Audit records and closed-cycle receipts cannot
-be edited or deleted from either app. Clients with renewals cannot be deleted through
-the web app. Current-cycle receipt corrections remain available to admins. Editing
+be edited through either app's ordinary receipt controls. Clients with renewals can be
+recycled through the web-only [Trash workflow](./client-trash.md), which preserves their
+history for restoration. Confirmed permanent deletion from Trash removes payments and
+renewal history; receipt audit events and identifier reservations remain. Current-cycle
+receipt corrections remain available to admins. Editing
 the current loan does not rewrite any historical snapshot.
 
-## Trusted service and data model
+## Firestore service and data model
 
-`functions/src/index.ts` exposes the authenticated `renewClient` callable in
-`asia-southeast1`. It obtains the role and administrator name from `users/{uid}`.
-In a Firestore server transaction it reads the current client, their payments,
-holidays, previous renewals and identifier counter, then validates eligibility again.
-Stale loan IDs/transaction numbers and duplicate requests are rejected. The new loan,
-immutable event, counter and reservation commit together or change nothing.
+`src/services/renewals.ts` performs renewal directly using the Firestore browser SDK.
+Each transaction rechecks the active admin/developer profile and reads the current
+client, receipts, holidays, previous renewals, and identifier counter. It validates
+eligibility again. Stale loan IDs, transaction numbers, revisions, and duplicate approvals
+are rejected. The new loan, immutable event, counter, and reservation commit together.
 
-Server transaction queries provide serializable isolation, rather than trusting
-browser-calculated balances. See [Firebase transaction isolation](https://firebase.google.com/docs/firestore/transaction-data-contention).
+Firestore rules require an admin/developer and a matching history record for a cycle
+transition. They validate the transition, snapshots, actor, timestamps, and basic terms.
+Settlement totals and the holiday-based schedule are assessed by the web service;
+rules cannot sum an arbitrary receipt query or recompute the collection calendar.
+The service queries the server and tracks every returned document in the transaction,
+so edits/deletions trigger retries. The browser SDK cannot lock a query against new
+matching receipts from another device. Avoid concurrent corrections/collections while
+approving renewal. See [Firebase transactions](https://firebase.google.com/docs/firestore/manage-data/transactions).
 
 | Location / field | Meaning |
 | --- | --- |
@@ -83,31 +91,26 @@ From `apps/web`:
 
 ```powershell
 npm.cmd ci
-npm.cmd --prefix functions ci
 npm.cmd test
-npm.cmd run test:renewals
+npm.cmd run test:spark
 npm.cmd exec playwright test
 npm.cmd run build
 ```
 
-The backend uses Node.js 22. esbuild bundles the shared pure loan logic into
-`functions/lib`, so Firebase receives self-contained backend JavaScript. Both
-dependency trees have lockfiles. Emulator tests use only `demo-mcl-policy` on
-localhost:8188 and reject production project configuration. They cover successful
-renewal, authorization, partial/late settlement, forged eligibility, concurrent and
-duplicate requests, second renewal, incomplete/late history, exhausted transaction
-numbers, cycle boundaries and immutable audit permissions.
+No functions package installation or build is needed. The Spark emulator suite runs
+the actual web services with Firestore rules against `demo-mcl-policy` on localhost:8188
+and rejects live project configuration. `test:renewals` is an alias for this suite.
 
-The live callable and rules are **not deployed by editing these files**. Update
-Android cycle handling before renewing borrowers serviced by collectors. Deploy
-the web app and backend changes together to the intended Firebase project.
-Deployment requires Firebase's Blaze plan; see the
-[official Cloud Functions setup guide](https://firebase.google.com/docs/functions/get-started).
+The website and rules are **not deployed by editing these files**. Update Android
+cycle handling before renewing borrowers serviced by collectors. Build the website,
+then deploy its rules and hosting to the intended Firebase project. This works on
+Spark within its quotas; no Cloud Functions or Blaze upgrade is needed.
 
 ```powershell
-npx firebase-tools deploy --only "functions:mcl-renewals,firestore:rules" --config firebase.print-studio.json --project YOUR_PROJECT_ID
+npx.cmd firebase-tools deploy --only "firestore:rules,hosting" --config firebase.print-studio.json --project YOUR_PROJECT_ID
 ```
 
-The predeploy step builds the backend. Do not deploy the old repository-root rules;
-they omit settings, payment-policy and renewal protections. Local test commands
-do not change production rules, functions, billing plans or customer data.
+`apps/web/firestore.rules` is canonical; `npm run sync:rules` updates only the repository-root
+copy. Neither command rewrites Android rules. Local tests do not change production data,
+rules, billing plans, or hosting. The retained `functions/` source is not used by the
+website and is excluded from the web deployment configuration.

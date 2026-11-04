@@ -2,6 +2,7 @@ import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 import { describeError } from '../lib/errors';
+import { isAdminRole } from '../lib/roles';
 import type { UserProfile } from '../types';
 import type { AuthStatus } from '../context/AuthContext';
 import { userFromDoc } from './converters';
@@ -34,7 +35,7 @@ export function watchAdminSession(onState: (state: AdminSession) => void) {
     stopProfile = onSnapshot(doc(db, 'users', user.uid), { includeMetadataChanges: true }, (snapshot) => {
       if (!isCurrent() || snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites) return;
       const profile = userFromDoc(snapshot);
-      if (!profile?.active || snapshot.data()?.role !== 'admin') {
+      if (!profile?.active || !isAdminRole(profile.role)) {
         deny('This account is inactive or does not have administrator access.');
         return;
       }

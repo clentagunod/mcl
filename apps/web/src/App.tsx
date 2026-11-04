@@ -8,6 +8,7 @@ import { AuthProvider } from './context/AuthProvider';
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const ClientsPage = lazy(() => import('./pages/clients/ClientsPage'));
+const TrashPage = lazy(() => import('./pages/clients/TrashPage'));
 const PrintablesPage = lazy(() => import('./pages/PrintablesPage'));
 const LiquidationPage = lazy(() => import('./pages/LiquidationPage'));
 const CollectorsPage = lazy(() => import('./pages/collectors/CollectorsPage'));
@@ -24,6 +25,7 @@ export default function App() {
             <Route element={<RequireAdmin />}>
               <Route index element={<DashboardPage />} />
               <Route path="clients" element={<ClientsPage />} />
+              <Route path="trash" element={<TrashPage />} />
               <Route path="printables" element={<PrintablesPage />} />
               <Route path="liquidation" element={<LiquidationPage />} />
               <Route path="collectors" element={<CollectorsPage />} />
