@@ -8,6 +8,7 @@ import { Logo } from './Logo';
 import { TrashAutoDeletion } from './TrashAutoDeletion';
 import { Icon, type IconName } from './Icon';
 import { ThemeToggle } from './ThemeToggle';
+import { AppFooter } from './AppFooter';
 import { formatDate } from '../lib/dates';
 
 const NAV_ITEMS: { to: string; label: string; icon: IconName; hint: string; group: 'workspace' | 'manage'; end?: boolean }[] = [
@@ -90,7 +91,7 @@ export function Layout() {
           {settingsError && <p className="alert alert-error" role="alert">Settings could not sync: {settingsError} Open Settings for connection details.</p>}
           <div key={location.pathname} className="page-transition"><Outlet /></div>
         </main>
-        <footer className="workspace-footer"><span>{settings.general.businessName}</span><span>Lending administration</span></footer>
+        <AppFooter className="workspace-footer" />
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { Logo } from './Logo';
+import { PublicPage } from './PublicPage';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -24,7 +25,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   render() {
     if (!this.state.failed) return this.props.children;
     return (
-      <div className="login-wrap">
+      <PublicPage>
         <div className="card login-card">
           <Logo />
           <h1>Something went wrong</h1>
@@ -33,7 +34,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             Reload page
           </button>
         </div>
-      </div>
+      </PublicPage>
     );
   }
 }

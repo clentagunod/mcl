@@ -129,6 +129,18 @@ After deployment, open and refresh `/login` and `/clients`, confirm that
 the website; Firestore rules are still published separately using the existing
 Firebase rules deployment command above. No Cloud Functions deployment is needed.
 
+### Maintenance mode
+
+Set `VITE_MAINTENANCE_MODE=true` in Vercel's Environment Variables for the desired
+environment, then redeploy. Every web URL will show the maintenance page before
+Firebase authentication or data subscriptions start. Set it to `false` (or remove
+it) and redeploy to restore the website. Locally, change the value in `.env.local`
+and restart the dev server. This is a build-time website switch; it does not
+disable Firebase access or change the Android app.
+
+Open `/maintenance` to preview the page even when maintenance mode is off.
+It uses the website's light/dark theme and shared credit footer.
+
 ## 3. Business rules (all in `src/lib/loan.ts`, covered by tests)
 
 - **Total payable** = principal + fixed interest (a peso amount, not a percentage). 10,000 + 1,250 = 11,250.

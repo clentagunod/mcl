@@ -1,4 +1,5 @@
 import { Logo } from './Logo';
+import { PublicPage } from './PublicPage';
 
 interface SetupNoticeProps {
   missingKeys: string[];
@@ -7,7 +8,7 @@ interface SetupNoticeProps {
 /** Shown instead of the app when the Firebase settings in ".env" are missing. */
 export function SetupNotice({ missingKeys }: SetupNoticeProps) {
   return (
-    <div className="login-wrap">
+    <PublicPage>
       <div className="card login-card">
         <Logo />
         <h1>Firebase is not set up yet</h1>
@@ -24,6 +25,6 @@ export function SetupNotice({ missingKeys }: SetupNoticeProps) {
           ))}
         </ul>
       </div>
-    </div>
+    </PublicPage>
   );
 }

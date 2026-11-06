@@ -13,6 +13,13 @@ async function bootstrap() {
   if (!container) throw new Error('Root element #root was not found.');
   const root = createRoot(container);
 
+  // Maintenance takes precedence over Firebase setup and authentication.
+  if (import.meta.env.VITE_MAINTENANCE_MODE === 'true' || window.location.pathname.replace(/\/+$/, '') === '/maintenance') {
+    const { default: MaintenancePage } = await import('./pages/MaintenancePage');
+    root.render(<StrictMode><MaintenancePage /></StrictMode>);
+    return;
+  }
+
   // Firebase is only loaded when it is configured, so a missing ".env" shows a
   // helpful message instead of a crash.
   if (missingEnvKeys.length > 0) {

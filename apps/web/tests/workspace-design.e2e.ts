@@ -105,6 +105,8 @@ test('all workspace pages render inside the real shell without runtime errors', 
   for (const [label, heading] of destinations) {
     await navigation.getByRole('link', { name: label, exact: true }).click();
     await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
+    await expect(page.getByRole('contentinfo')).toContainText('© MCL Lending App');
+    await expect(page.getByRole('contentinfo').getByRole('link', { name: 'ClentIndustries' })).toHaveAttribute('href', 'https://clentindustries.vercel.app');
     await expect(navigation.getByRole('link', { name: label, exact: true })).toHaveAttribute('aria-current', 'page');
     await expect(page.getByRole('main')).not.toContainText('Something went wrong');
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

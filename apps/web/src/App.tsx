@@ -6,6 +6,7 @@ import { AuthProvider } from './context/AuthProvider';
 
 // Each page is loaded only when it is first opened, which keeps the first load fast.
 const LoginPage = lazy(() => import('./pages/LoginPage'));
+const MaintenancePage = lazy(() => import('./pages/MaintenancePage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const ClientsPage = lazy(() => import('./pages/clients/ClientsPage'));
 const TrashPage = lazy(() => import('./pages/clients/TrashPage'));
@@ -22,6 +23,7 @@ export default function App() {
         <Suspense fallback={<LoadingState />}>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/maintenance" element={<MaintenancePage />} />
             <Route element={<RequireAdmin />}>
               <Route index element={<DashboardPage />} />
               <Route path="clients" element={<ClientsPage />} />
