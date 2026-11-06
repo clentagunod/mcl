@@ -85,6 +85,50 @@ Receipt retry/deletion behavior and the limits of direct writes are documented i
 the [receipt guide](./docs/receipt-rollout.md). The retired `VITE_RECEIPT_BACKEND` variable
 and `receiptPolicy.backendOnly` flag are ignored by this build and its rules.
 
+### Deploy the website to Vercel
+
+Import this repository in Vercel and set **Root Directory** to `apps/web`.
+The checked-in [`vercel.json`](./vercel.json) supplies these settings:
+
+| Setting | Value |
+| --- | --- |
+| Framework Preset | Vite |
+| Install Command | `npm ci` |
+| Build Command | `npm run build` |
+| Output Directory | `dist` |
+
+These paths are relative to `apps/web`; do not enter `apps/web/dist` as the
+output directory when using that root. The app is served at `/` on the deployed
+domain, so page URLs are `/clients`, `/settings`, etc., without an `/apps/web` prefix.
+The SPA rewrite follows [Vercel's Vite guidance](https://vercel.com/docs/frameworks/frontend/vite#using-vite-to-make-spas)
+so opening or refreshing page URLs loads `index.html` and lets React Router handle them.
+Vite already emits root-relative asset URLs and bundles the document template;
+the public logo is served at `/assets/logo.png`.
+
+If the Vercel project's Root Directory is left at the repository root (`.`),
+the [repository-level configuration](../../vercel.json) instead installs and builds
+with `npm --prefix apps/web` and serves `apps/web/dist`. Both configurations build
+only the web app. Use the configuration that matches your project's Root Directory;
+the root setting itself is configured in Vercel, not in `vercel.json`.
+
+Before deploying, add the six `VITE_FIREBASE_*` entries listed in
+[`.env.example`](./.env.example) to Vercel's Environment Variables for Production
+and any Preview deployments you use. Keep their Firebase web app values; a local
+`.env.local` is not included in Git deployments. Vite reads these values at build
+time, so redeploy after changing them. Never add Firebase Admin credentials or
+service-account keys to a `VITE_*` variable.
+
+Add the website's production/custom hostname and any preview hostname used for
+authentication to **Firebase Authentication > Settings > Authorized domains**.
+Keep `VITE_FIREBASE_AUTH_DOMAIN` set to the Firebase project's configured auth
+domain unless you have separately configured a custom auth domain.
+
+Validate locally from the repository root with `npm --prefix apps/web run build`.
+After deployment, open and refresh `/login` and `/clients`, confirm that
+`/assets/logo.png` loads, and check sign-in and a document export. Vercel hosts
+the website; Firestore rules are still published separately using the existing
+Firebase rules deployment command above. No Cloud Functions deployment is needed.
+
 ## 3. Business rules (all in `src/lib/loan.ts`, covered by tests)
 
 - **Total payable** = principal + fixed interest (a peso amount, not a percentage). 10,000 + 1,250 = 11,250.
