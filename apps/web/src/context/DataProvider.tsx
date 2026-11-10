@@ -42,8 +42,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [clients.data, payments.data]);
 
   const rows = useMemo(
-    () => buildClientRows(clients.data, payments.data, holidayDates, today),
-    [clients.data, payments.data, holidayDates, today],
+    () => buildClientRows(clients.data, payments.data, holidayDates, today, settingsState.settings.schedule.skipSundays),
+    [clients.data, payments.data, holidayDates, today, settingsState.settings.schedule.skipSundays],
   );
 
   const value = useMemo<DataContextValue>(
@@ -54,11 +54,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       holidays: holidays.data,
       rows,
       today,
-      loading: clients.loading || payments.loading || collectors.loading || holidays.loading,
-      error: clients.error ?? payments.error ?? collectors.error ?? holidays.error ?? completionError
+      loading: clients.loading || payments.loading || collectors.loading || holidays.loading || settingsState.loading,
+      error: clients.error ?? payments.error ?? collectors.error ?? holidays.error ?? settingsState.error ?? completionError
         ?? (clients.fresh && payments.fresh && collectors.fresh && holidays.fresh ? null : 'Displayed records are awaiting server confirmation. Payment entry and renewals require confirmed live data.'),
     }),
-    [clients, payments, activePayments, collectors, holidays, rows, today, completionError],
+    [clients, payments, activePayments, collectors, holidays, rows, today, completionError, settingsState.loading, settingsState.error],
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

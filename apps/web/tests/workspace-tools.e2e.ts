@@ -7,13 +7,26 @@ test.beforeEach(async ({ page }) => {
 test('settings section navigation and direct links keep every setting accessible', async ({ page }) => {
   await page.goto('/tests/fixtures/print-studio.html?view=settings#settings-trash');
   const navigation = page.getByRole('navigation', { name: 'Settings sections' });
-  await expect(navigation.getByRole('link')).toHaveCount(6);
+  await expect(navigation.getByRole('link')).toHaveCount(9);
   await expect(page.getByLabel('Automatically delete Trash', { exact: true })).toBeInViewport();
   await navigation.getByRole('link', { name: /Print defaults/ }).click();
   await expect(page.locator('#settings-studio')).toBeInViewport();
   await navigation.getByRole('link', { name: /General/ }).click();
   await expect(page.getByLabel('Website name', { exact: true })).toBeInViewport();
   await expect(page.getByRole('button', { name: 'Save settings', exact: true })).toBeVisible();
+});
+
+test('Sunday counting is off by default and the settings control can be changed and discarded', async ({ page }) => {
+  await page.goto('/tests/fixtures/print-studio.html?view=settings#settings-schedule');
+  const skipSundays = page.getByRole('switch', { name: 'Skip Sundays when counting loan days', exact: true });
+  await expect(skipSundays).not.toBeChecked();
+  await expect(skipSundays).toBeInViewport();
+  await expect(page.locator('#settings-schedule')).toContainText('Configured holidays are always excluded.');
+  await skipSundays.check();
+  await expect(page.getByRole('button', { name: 'Save settings', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Discard changes', exact: true }).click();
+  await expect(skipSundays).not.toBeChecked();
+  await expect(page.getByRole('button', { name: 'Save settings', exact: true })).toBeDisabled();
 });
 
 test('calendar selection fills the holiday form and saving updates the calendar', async ({ page }) => {

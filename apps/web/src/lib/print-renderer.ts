@@ -1,8 +1,9 @@
 import type { AppSettings, PrintLayout, PrintableKind } from '../config/settings';
-import type { Client, Payment } from '../types';
+import type { Client, Holiday, Payment } from '../types';
 import noteTemplate from '../templates/promissory.html?raw';
 import printStyles from '../print.css?raw';
 import { formatDate } from './dates';
+import { computeSchedule } from './loan';
 import { round2, sumAmounts } from './money';
 import { dailyPayable, dailySummary, fullClientName, indexEntries, paperDimensions, promissoryValues, publicClientId, summaryClientName, type SummaryEntry } from './printables';
 
@@ -12,6 +13,8 @@ export interface PrintJob {
   /** Total available clients, so a filtered summary can identify its scope. */
   totalClients?: number;
   payments: readonly Payment[];
+  /** Shared holiday calendar used by the client's loan schedule. */
+  holidays: readonly Holiday[];
   settings: AppSettings;
   layout: PrintLayout;
   date: string;
@@ -30,9 +33,11 @@ export function indexCardPages(client: Client, payments: readonly Payment[]): { 
 
 function indexCards(job: PrintJob): string[] {
   const { index } = job.settings;
+  const holidays = new Set(job.holidays.map((holiday) => holiday.date));
   return job.clients.flatMap((client) => {
     const entries = indexEntries(client, job.payments);
     const pages = indexCardPages(client, job.payments);
+    const { dueDate } = computeSchedule(client.approvalDate, client.loanTermDays, holidays, job.date, undefined, job.settings.schedule.skipSundays);
     return pages.map((page, pageIndex) => {
       const grid = Array.from({ length: page.rows }, (_, row) => `<tr>${Array.from({ length: 4 }, (_, col) => {
         const day = page.from + col * page.rows + row;
@@ -45,6 +50,7 @@ function indexCards(job: PrintJob): string[] {
         <header class="index-heading"><img src="${escapeHtml(job.logoUrl)}" alt="MCL Lending logo"><h1>${escapeHtml(index.businessName.toUpperCase())}</h1></header>
         <div class="index-subheading"><i>${escapeHtml(index.branch)}</i><strong>BORROWER’S COPY</strong><strong>MOBILE #: ${escapeHtml(index.mobile)}</strong></div>
         <div class="index-details"><div>Name: <b>${escapeHtml(fullClientName(client))}</b></div><div>Date: <b>${escapeHtml(formatDate(client.approvalDate))}</b></div><div>Address: <b>${escapeHtml(client.address)}</b></div><div>Amount: <b>${printMoney(amount)}</b></div><div>No. of Days: <b>${client.loanTermDays}</b></div><div>Daily: <b>${printMoney(dailyPayable(client))}</b></div></div>
+        <div class="index-due-date">Due date: <b>${escapeHtml(formatDate(dueDate))}</b></div>
         <div class="index-reference">${escapeHtml(publicClientId(client))} · Transaction ${escapeHtml(client.transactionNumber || 'Pending')} ${pages.length > 1 ? `· Card ${pageIndex + 1}/${pages.length}` : ''}</div>
         <table class="index-grid" aria-label="Sequential paying days"><tbody>${grid}</tbody></table>
       </div></section>`;

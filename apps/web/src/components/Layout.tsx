@@ -16,6 +16,7 @@ const NAV_ITEMS: { to: string; label: string; icon: IconName; hint: string; grou
   { to: '/clients', label: 'Clients', icon: 'clients', hint: 'Manage clients and their loans', group: 'workspace' },
   { to: '/printables', label: 'Printables', icon: 'documents', hint: 'Prepare documents, print and export', group: 'workspace' },
   { to: '/liquidation', label: 'Consolidation', icon: 'wallet', hint: 'Consolidation and liquidation ledger', group: 'workspace' },
+  { to: '/expenses', label: 'Expenses', icon: 'wallet', hint: 'Paid expenses and expense types', group: 'workspace' },
   { to: '/collectors', label: 'Collectors & Admins', icon: 'users', hint: 'Manage team accounts and access', group: 'manage' },
   { to: '/holidays', label: 'Holidays', icon: 'calendar', hint: 'Manage non-collection dates', group: 'manage' },
   { to: '/settings', label: 'Settings', icon: 'settings', hint: 'Workspace and document preferences', group: 'manage' },
@@ -68,7 +69,7 @@ export function Layout() {
         <nav aria-label="Main">
           {(['workspace', 'manage'] as const).map(group => <div className="nav-group" key={group}>
             <p className="nav-group-label">{group === 'workspace' ? 'Workspace' : 'Management'}</p>
-            <ul>{NAV_ITEMS.filter(item => item.group === group).map(item => <li key={item.to}>
+            <ul>{NAV_ITEMS.filter(item => item.group === group && (item.to !== '/expenses' || settings.accounting.expensesEnabled)).map(item => <li key={item.to}>
               <NavLink to={item.to} end={item.end} title={item.hint} onClick={() => setMenuOpen(false)} className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
                 <Icon name={item.icon} /><span>{item.label}</span>
               </NavLink>

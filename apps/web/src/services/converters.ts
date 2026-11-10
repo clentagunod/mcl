@@ -1,5 +1,5 @@
 import { Timestamp, type DocumentData, type QueryDocumentSnapshot } from 'firebase/firestore';
-import { LOAN_TERMS } from '../config/app';
+import { DEFAULT_LOAN_TERM_DAYS, LOAN_TERMS } from '../config/app';
 import { isMoney } from '../lib/money';
 import { isISODate } from '../lib/dates';
 import type { Client, Holiday, LoanTermDays, Payment, UserProfile } from '../types';
@@ -23,7 +23,7 @@ function toDate(value: unknown): Date | null {
 }
 
 function loanTerm(value: unknown): LoanTermDays {
-  return (LOAN_TERMS as readonly unknown[]).includes(value) ? (value as LoanTermDays) : LOAN_TERMS[0];
+  return (LOAN_TERMS as readonly unknown[]).includes(value) ? (value as LoanTermDays) : DEFAULT_LOAN_TERM_DAYS;
 }
 
 function read(snapshot: QueryDocumentSnapshot): DocumentData {

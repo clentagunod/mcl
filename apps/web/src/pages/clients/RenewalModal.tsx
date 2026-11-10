@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { FormField } from '../../components/FormField';
 import { Modal } from '../../components/Modal';
 import { useAuth } from '../../context/AuthContext';
+import { useSettings } from '../../context/SettingsContext';
 import { useData } from '../../context/DataContext';
 import { LOAN_TERMS } from '../../config/app';
 import { formatDate, formatDateTime } from '../../lib/dates';
@@ -82,6 +83,7 @@ export function RenewalHistoryModal({ clientId, onClose }: { clientId: string; o
 export function RenewalModal({ clientId, onClose }: { clientId: string; onClose: () => void }) {
   const { clients, payments, holidays, today, loading: dataLoading, error: dataError } = useData();
   const { profile } = useAuth();
+  const { settings, loading: settingsLoading, error: settingsError } = useSettings();
   const client = clients.find((c) => c.id === clientId);
   const history = useRenewalHistory(client);
   const [values, setValues] = useState(() => ({ principal: String(client?.principal || ''), interest: String(client?.interest ?? 0), dailyAmount: String(client ? dailyPayable(client) : ''), loanTermDays: String(client?.loanTermDays || 45), approvalDate: today }));
@@ -91,9 +93,9 @@ export function RenewalModal({ clientId, onClose }: { clientId: string; onClose:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   if (!client || !isAdminRole(profile?.role)) return null;
-  const eligibility = renewalEligibility(client, payments, new Set(holidays.map((h) => h.date)), today);
+  const eligibility = renewalEligibility(client, payments, new Set(holidays.map((h) => h.date)), today, settings.schedule.skipSundays);
   const loanChanged = loanId(client) !== openedLoanId;
-  const ready = !dataLoading && !dataError && !loanChanged && eligibility.eligible && !history.loading && !history.error && history.records.length === (client.renewalCount || 0) && hasGoodRenewalHistory(history.records);
+  const ready = !dataLoading && !dataError && !settingsLoading && !settingsError && !loanChanged && eligibility.eligible && !history.loading && !history.error && history.records.length === (client.renewalCount || 0) && hasGoodRenewalHistory(history.records);
   const bind = (key: keyof typeof values) => ({ value: values[key], onChange: (event: { target: { value: string } }) => { setValues((old) => ({ ...old, [key]: event.target.value })); setApproved(false); } });
   async function submit(event: FormEvent) {
     event.preventDefault();

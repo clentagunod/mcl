@@ -7,6 +7,25 @@ test.beforeEach(async ({ page }) => {
   await page.route(/https:\/\/.*(?:googleapis\.com|firebaseio\.com)/, (route) => route.abort());
 });
 
+test('index due date matches client loan information and survives HTML and Word exports', async ({ page }) => {
+  await page.goto('/tests/fixtures/print-studio.html?view=clients&holiday=1');
+  const clientDueDate = (await page.locator('.client-schedule strong').first().innerText()).replace(/^Due /, '');
+  await page.goto('/tests/fixtures/print-studio.html?holiday=1');
+  await expect(page.frameLocator('iframe').locator('.index-due-date')).toHaveText(`Due date: ${clientDueDate}`);
+  await expect(page.getByRole('button', { name: 'Print', exact: true })).toBeEnabled();
+
+  const wordPending = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export DOCX', exact: true }).click();
+  const word = await wordPending;
+  const files = unzipSync(new Uint8Array(await readFile((await word.path())!)));
+  expect(strFromU8(files['word/document.xml'])).toContain(`Due date: ${clientDueDate}`);
+
+  const htmlPending = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export HTML', exact: true }).click();
+  const html = await htmlPending;
+  expect(await readFile((await html.path())!, 'utf8')).toContain(`Due date: <b>${clientDueDate}</b>`);
+});
+
 test('index template, sequential paying days, all terms and reset controls', async ({ page }) => {
   await page.goto('/tests/fixtures/print-studio.html');
   const frame = page.frameLocator('iframe');
@@ -150,7 +169,7 @@ test('batch notes export separately in a ZIP and narrow screen remains usable', 
 test('PDF output has the configured paper sizes and no extra blank pages', async ({ page, context }) => {
   await page.goto('/tests/fixtures/print-studio.html');
   for (const [title, expectedPages, widthPt, heightPt] of [
-    ['Index Card', 1, 238 / 25.4 * 72, 122 / 25.4 * 72],
+    ['Index Card', 1, 297 / 25.4 * 72, 210 / 25.4 * 72],
     ['Promissory Note', 1, 210 / 25.4 * 72, 297 / 25.4 * 72],
     ['Daily Summary Sheet', 1, 297 / 25.4 * 72, 210 / 25.4 * 72],
   ] as const) {

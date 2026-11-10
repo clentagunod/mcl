@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, mergeSettings, validLayout, validateSettings } from '../config/settings';
+import { DEFAULT_SETTINGS, mergeSettings, validLayout, validateSettings, type PrintableKind } from '../config/settings';
 import type { Client, Payment } from '../types';
 import { formatSequence } from './identifiers';
 import { dailyPayable, dailySummary, indexEntries, paperDimensions, pesoWords, promissoryValues } from './printables';
 import { indexCardPages, renderPrintDocument, summaryPages, type PrintJob } from './print-renderer';
 import { validateClientForm } from './validation';
+import { computeSchedule, summarizeLoan } from './loan';
+import { addDays, formatDate } from './dates';
+import { LOAN_TERMS } from '../config/app';
 
 const client: Client = { id: 'legacy-id', clientNumber: 'mcl0001', transactionNumber: '00001', firstName: 'Juan', lastName: 'Dela Cruz', middleName: 'Santos', address: 'San Miguel', cellphone: '09170000000', principal: 10000, interest: 1250, loanTermDays: 45, approvalDate: '2026-10-20' };
 const receipt = (id: string, amount: number, paymentDate: string, extra: Partial<Payment> = {}): Payment => ({ id, amount, paymentDate, clientId: client.id, collectorId: 'admin', collectorName: 'Admin', createdAt: null, ...extra });
-const makeJob = (overrides: Partial<PrintJob> = {}): PrintJob => ({ kind: 'index', clients: [client], payments: [], settings: DEFAULT_SETTINGS, layout: DEFAULT_SETTINGS.studio.index, date: '2026-11-02', logoUrl: '/assets/logo.png', ...overrides });
+const makeJob = (overrides: Partial<PrintJob> = {}): PrintJob => ({ kind: 'index', clients: [client], payments: [], holidays: [], settings: DEFAULT_SETTINGS, layout: DEFAULT_SETTINGS.studio.index, date: '2026-11-02', logoUrl: '/assets/logo.png', ...overrides });
 
 describe('paying day numbering', () => {
   it('fills missed dates without gaps and combines same-day receipts regardless of source', () => {
@@ -65,6 +68,64 @@ describe('daily summary', () => {
 });
 
 describe('templates and settings', () => {
+  it.each(['index', 'promissory', 'summary'] as const)('renders the %s default with an actual A4 page for every supported term', (kind: PrintableKind) => {
+    const settings = mergeSettings({});
+    const [width, height] = kind === 'promissory' ? [210, 297] : [297, 210];
+    for (const loanTermDays of LOAN_TERMS) {
+      const rendered = renderPrintDocument(makeJob({ kind, settings, layout: settings.studio[kind], clients: [{ ...client, loanTermDays }] }));
+      expect(rendered.html).toContain(`@page{size:${width}mm ${height}mm;margin:0}`);
+      expect(rendered.html).toContain(`--page-width:${width}mm;--page-height:${height}mm;`);
+      expect(rendered.pages).toBe(1);
+    }
+  });
+
+  it.each(LOAN_TERMS)('prints the actual %s-day loan due date using the shared holiday calendar', (loanTermDays) => {
+    const currentClient = { ...client, loanTermDays };
+    const withoutHoliday = computeSchedule(currentClient.approvalDate, loanTermDays, new Set(), '2026-11-02').dueDate;
+    const holidays = [{ date: withoutHoliday, name: 'Local holiday' }];
+    const actual = summarizeLoan(currentClient, [], new Set(holidays.map((holiday) => holiday.date)), '2026-11-02');
+    const html = renderPrintDocument(makeJob({ clients: [currentClient], holidays })).html;
+    expect(actual.dueDate > withoutHoliday).toBe(true);
+    expect(html).toContain(`<div class="index-due-date">Due date: <b>${formatDate(actual.dueDate)}</b></div>`);
+  });
+
+  it('uses 30 numbered entries and preserves overflow on a continuation card', () => {
+    const thirtyDayClient = { ...client, loanTermDays: 30 as const };
+    const firstCard = renderPrintDocument(makeJob({ clients: [thirtyDayClient] }));
+    expect(firstCard.pages).toBe(1);
+    expect(firstCard.html.match(/class="index-entry"/g)).toHaveLength(30);
+    expect(firstCard.html).toContain('No. of Days: <b>30</b>');
+    const payments = Array.from({ length: 33 }, (_, i) => receipt(String(i), 1, addDays(client.approvalDate, i + 1)));
+    expect(indexCardPages(thirtyDayClient, payments)).toEqual([{ from: 1, to: 32, rows: 8 }, { from: 33, to: 33, rows: 8 }]);
+  });
+
+  it('prints the due date using the configured Sunday policy for a 30-day loan', () => {
+    const currentClient = { ...client, loanTermDays: 30 as const };
+    const dates: string[] = [];
+    for (const skipSundays of [false, true]) {
+      const settings = structuredClone(DEFAULT_SETTINGS);
+      settings.schedule.skipSundays = skipSundays;
+      const dueDate = summarizeLoan(currentClient, [], new Set(), '2026-11-02', skipSundays).dueDate;
+      const html = renderPrintDocument(makeJob({ clients: [currentClient], settings })).html;
+      expect(html).toContain(`<div class="index-due-date">Due date: <b>${formatDate(dueDate)}</b></div>`);
+      dates.push(dueDate);
+    }
+    expect(dates[1] > dates[0]).toBe(true);
+  });
+
+  it('repeats the due date on continuation cards and uses a renewed loan’s current terms', () => {
+    const renewed: Client = { ...client, activeLoanId: '00002', transactionNumber: '00002', approvalDate: '2026-11-02' };
+    const payments = Array.from({ length: 60 }, (_, i) => receipt(String(i), 1, addDays('2026-11-03', i), { loanId: '00002' }));
+    const rendered = renderPrintDocument(makeJob({ clients: [renewed], payments }));
+    const dueDate = formatDate(computeSchedule(renewed.approvalDate, renewed.loanTermDays, new Set(), '2026-11-02').dueDate);
+    expect(rendered.pages).toBe(2);
+    expect(rendered.html.match(new RegExp(`Due date: <b>${dueDate}</b>`, 'g'))).toHaveLength(2);
+  });
+
+  it('shows N/A on the promissory note when a client has no cellphone number', () => {
+    expect(promissoryValues({ ...client, cellphone: '' }, DEFAULT_SETTINGS).cellphone).toBe('N/A');
+  });
+
   it('prints exact centavo wording, including round-up boundaries', () => {
     expect(pesoWords(11250)).toBe('ELEVEN THOUSAND TWO HUNDRED FIFTY PESOS');
     expect(pesoWords(1000.01)).toBe('ONE THOUSAND PESOS AND ONE CENTAVO');

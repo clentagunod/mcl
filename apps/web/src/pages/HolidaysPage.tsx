@@ -5,6 +5,7 @@ import { PageHeader } from '../components/PageHeader';
 import { Icon } from '../components/Icon';
 import { EmptyState, ErrorState, LoadingState } from '../components/StateMessage';
 import { useData } from '../context/DataContext';
+import { useSettings } from '../context/SettingsContext';
 import { formatDate, isISODate } from '../lib/dates';
 import { describeError } from '../lib/errors';
 import { validateHolidayForm, type FieldErrors, type HolidayFormValues } from '../lib/validation';
@@ -23,6 +24,7 @@ function shiftMonth(month: string, difference: number): string {
 
 export default function HolidaysPage() {
   const { holidays, loading, today } = useData();
+  const { settings } = useSettings();
   const [values, setValues] = useState<HolidayFormValues>(EMPTY_FORM);
   const [errors, setErrors] = useState<FieldErrors<HolidayFormValues>>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -79,7 +81,7 @@ export default function HolidaysPage() {
     <>
       <PageHeader
         title="Holidays"
-        description="Plan non-collection days and keep loan due dates accurate. Sundays are already excluded."
+        description={`Plan non-collection days and keep loan due dates accurate. ${settings.schedule.skipSundays ? 'Sundays are excluded by your loan schedule setting.' : 'Sundays count unless registered as a holiday.'}`}
       />
       <div className="tools-summary-grid holiday-summary">
         <div className="tools-summary-item"><span className="tools-summary-icon"><Icon name="calendar" /></span><div><span className="muted small">Saved holidays</span><strong>{holidays.length}</strong></div></div>
@@ -138,7 +140,7 @@ export default function HolidaysPage() {
         <div className="tools-section-heading"><div><h2>Saved holidays <span className="tools-count">{holidays.length}</span></h2><p className="muted small">Manage the dates your collectors take a break.</p></div><div className="tools-filter-pills" aria-label="Holiday date filter">{(['all', 'upcoming', 'past'] as const).map(value => <button key={value} type="button" className={filter === value ? 'active' : ''} aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === 'all' ? 'All dates' : value === 'upcoming' ? 'Upcoming' : 'Past'}</button>)}</div></div>
         <label className="tools-search"><Icon name="search" /><input type="search" aria-label="Search holidays" placeholder="Search by holiday name or date" value={search} onChange={event => setSearch(event.target.value)} /></label>
         {sorted.length === 0 ? (
-          <EmptyState>{holidays.length ? 'No holidays match your search or date filter.' : 'No holidays yet. Only Sundays are skipped until you add some.'}</EmptyState>
+          <EmptyState>{holidays.length ? 'No holidays match your search or date filter.' : settings.schedule.skipSundays ? 'No holidays yet. Sundays are skipped by your loan schedule setting.' : 'No holidays yet. Every calendar day counts until you add a holiday.'}</EmptyState>
         ) : (
           <div className="table-wrap">
             <table>
@@ -170,7 +172,7 @@ export default function HolidaysPage() {
       {toDelete && (
         <ConfirmDialog
           title="Delete holiday"
-          message={`Remove ${toDelete.name} (${formatDate(toDelete.date)})? That day will count toward loan terms again, so due dates may move earlier.`}
+          message={`Remove ${toDelete.name} (${formatDate(toDelete.date)})? Due dates may move earlier if this day is no longer excluded by the loan schedule.`}
           confirmLabel="Delete"
           danger
           onConfirm={() => deleteHoliday(toDelete.date)}

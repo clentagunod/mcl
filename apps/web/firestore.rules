@@ -180,7 +180,7 @@ service cloud.firestore {
         && after.originalTransactionNumber == before.get('originalTransactionNumber', before.get('transactionNumber', ''))
         && validMoney(after.principal) && after.interest is number && after.interest >= 0
         && after.interest <= 999999999 && math.round(after.interest * 100) / 100.0 == after.interest
-        && validMoney(after.dailyAmount) && after.loanTermDays in [45, 50, 58]
+        && validMoney(after.dailyAmount) && after.loanTermDays in [30, 45, 50, 58]
         && validPaymentDate(after.approvalDate, clientId) && after.updatedAt == request.time
         && !exists(history) && existsAfter(history)
         && getAfter(history).data.approvedBy == request.auth.uid
@@ -304,14 +304,151 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Shared settings, allocation counters and identifier reservations are admin-only.
+    function expensesEnabled() {
+      let path = /databases/$(database)/documents/settings/Configurations/elements/accountingPolicy;
+      return exists(path) && get(path).data.get('expensesEnabled', false) == true;
+    }
+
+    function validAccountingPolicy() {
+      let d = request.resource.data;
+      return d.keys().hasAll(['paymentAllocation', 'expensesEnabled', 'updatedAt', 'updatedBy'])
+        && d.keys().hasOnly(['paymentAllocation', 'expensesEnabled', 'updatedAt', 'updatedBy'])
+        && d.paymentAllocation in ['principalFirst', 'proportional'] && d.expensesEnabled is bool
+        && d.updatedAt == request.time && d.updatedBy == request.auth.uid;
+    }
+
+    function validExpenseDate(value) {
+      let parts = value.split('-');
+      let year = int(parts[0]);
+      let month = int(parts[1]);
+      let day = int(parts[2]);
+      let date = timestamp.date(year, month, day);
+      return value.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && date.year() == year && date.month() == month && date.day() == day
+        && date <= (request.time + duration.value(8, 'h')).date();
+    }
+
+    function validExpenseAssignment(d) {
+      let path = /databases/$(database)/documents/clients/$(d.clientId);
+      return (d.clientId == '' && d.loanId == '')
+        || (d.clientId != '' && exists(path) && get(path).data.get('activeLoanId', 'initial') == d.loanId
+          && d.expenseDate >= get(path).data.approvalDate);
+    }
+
+    function validExpenseFields(d) {
+      return d.keys().hasAll(['categoryId', 'categoryName', 'amount', 'expenseDate', 'description', 'reference',
+          'clientId', 'loanId', 'status', 'voidReason', 'revision', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+        && d.keys().hasOnly(['categoryId', 'categoryName', 'amount', 'expenseDate', 'description', 'reference',
+          'clientId', 'loanId', 'status', 'voidReason', 'revision', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+        && validMoney(d.amount) && d.expenseDate is string && validExpenseDate(d.expenseDate)
+        && d.categoryId is string && d.categoryId.size() > 0 && d.categoryId.size() <= 128
+        && d.categoryName is string && d.categoryName.size() > 0 && d.categoryName.size() <= 80
+        && d.description is string && d.description.matches('[\\s\\S]*[^ \\t\\r\\n][\\s\\S]*') && d.description.size() <= 500
+        && d.reference is string && d.reference.size() <= 120
+        && d.clientId is string && d.clientId.size() <= 128 && d.loanId is string && d.loanId.size() <= 128
+        && ((d.clientId == '' && d.loanId == '') || (d.clientId != '' && d.loanId != ''))
+        && d.status in ['posted', 'void'] && d.voidReason is string && d.voidReason.size() <= 500
+        && (d.status == 'posted' ? d.voidReason == '' : d.voidReason.matches('[\\s\\S]*[^ \\t\\r\\n][\\s\\S]*'))
+        && d.revision is int && d.revision > 0 && d.createdAt is timestamp && d.createdBy is string
+        && d.updatedAt == request.time && d.updatedBy == request.auth.uid;
+    }
+
+    function validPostedExpense(d) {
+      let category = /databases/$(database)/documents/expenseCategories/$(d.categoryId);
+      return d.status == 'posted' && exists(category) && get(category).data.active == true
+        && get(category).data.name == d.categoryName && validExpenseAssignment(d);
+    }
+
+    function expenseHistoryMatches(expenseId, d) {
+      let path = /databases/$(database)/documents/expenses/$(expenseId)/history/$(string(d.revision));
+      return existsAfter(path) && getAfter(path).data == d;
+    }
+
+    match /expenseCategories/{categoryId} {
+      // The feature switch controls usage, not an administrator's read access.
+      // Listeners must remain authorized while an enable/disable save commits.
+      allow read: if isAdmin();
+      allow create, update: if isAdmin() && expensesEnabled()
+        && request.resource.data.keys().hasAll(['name', 'active', 'revision', 'updatedAt', 'updatedBy'])
+        && request.resource.data.keys().hasOnly(['name', 'active', 'revision', 'updatedAt', 'updatedBy'])
+        && request.resource.data.name is string && request.resource.data.name.matches('.*[^ \\t\\r\\n].*')
+        && request.resource.data.name.size() <= 80 && request.resource.data.active is bool
+        && request.resource.data.revision is int
+        && request.resource.data.revision == (resource == null ? 1 : resource.data.revision + 1)
+        && request.resource.data.updatedAt == request.time && request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if false;
+    }
+
+    match /expenses/{expenseId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && expensesEnabled() && validExpenseFields(request.resource.data)
+        && validPostedExpense(request.resource.data) && request.resource.data.revision == 1
+        && request.resource.data.createdAt == request.time && request.resource.data.createdBy == request.auth.uid
+        && expenseHistoryMatches(expenseId, request.resource.data);
+      allow update: if isAdmin() && expensesEnabled() && validExpenseFields(request.resource.data)
+        && resource.data.status == 'posted' && request.resource.data.revision == resource.data.revision + 1
+        && request.resource.data.createdAt == resource.data.createdAt && request.resource.data.createdBy == resource.data.createdBy
+        && (validPostedExpense(request.resource.data)
+          || (request.resource.data.status == 'void' && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'voidReason', 'revision', 'updatedAt', 'updatedBy'])))
+        && expenseHistoryMatches(expenseId, request.resource.data);
+      allow delete: if false;
+      match /history/{version} {
+        allow read: if isAdmin();
+        allow create: if isAdmin() && expensesEnabled()
+          && version == string(request.resource.data.revision)
+          && getAfter(/databases/$(database)/documents/expenses/$(expenseId)).data == request.resource.data
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.updatedBy == request.auth.uid;
+        allow update, delete: if false;
+      }
+    }
+
+    function validIdentifierPolicy() {
+      let d = request.resource.data;
+      return d.keys().hasAll(['resetWhenEmpty', 'updatedAt', 'updatedBy'])
+        && d.keys().hasOnly(['resetWhenEmpty', 'updatedAt', 'updatedBy'])
+        && d.resetWhenEmpty is bool && d.updatedAt == request.time && d.updatedBy == request.auth.uid;
+    }
+
+    function validConsolidationMetrics() {
+      let d = request.resource.data;
+      return d.keys().hasAll(['balance', 'interestCollected', 'expenseAmount', 'netIncome', 'principalReleased', 'cashSurplus', 'updatedAt', 'updatedBy'])
+        && d.keys().hasOnly(['balance', 'interestCollected', 'expenseAmount', 'netIncome', 'principalReleased', 'cashSurplus', 'updatedAt', 'updatedBy'])
+        && d.balance is bool && d.interestCollected is bool && d.expenseAmount is bool
+        && d.netIncome is bool && d.principalReleased is bool && d.cashSurplus is bool
+        && d.updatedAt == request.time && d.updatedBy == request.auth.uid;
+    }
+
+    function validLoanSchedulePolicy() {
+      let d = request.resource.data;
+      return d.keys().hasAll(['skipSundays', 'updatedAt', 'updatedBy'])
+        && d.keys().hasOnly(['skipSundays', 'updatedAt', 'updatedBy'])
+        && d.skipSundays is bool
+        && d.updatedAt == request.time && d.updatedBy == request.auth.uid;
+    }
+
+    // Collectors can get these policies individually, but cannot list shared settings.
     match /settings/Configurations/elements/paymentPolicy {
+      allow get: if isAdmin() || isActiveCollector();
+    }
+    match /settings/Configurations/elements/loanSchedule {
       allow get: if isAdmin() || isActiveCollector();
     }
 
     // Preserve the existing clients/users/payments/holidays policies above.
     match /settings/{component}/{element=**} {
-      allow read, write: if isAdmin();
+      allow read, delete: if isAdmin();
+      // Overlapping matches grant access with OR, so validate the new policy here.
+      allow create, update: if isAdmin()
+        && (request.path != /databases/$(database)/documents/settings/Configurations/elements/loanSchedule
+          || validLoanSchedulePolicy())
+        && (request.path != /databases/$(database)/documents/settings/Configurations/elements/accountingPolicy
+          || validAccountingPolicy())
+        && (request.path != /databases/$(database)/documents/settings/Configurations/elements/consolidationMetrics
+          || validConsolidationMetrics())
+        && (request.path != /databases/$(database)/documents/settings/Configurations/elements/identifierPolicy
+          || validIdentifierPolicy());
     }
 
     // Everything else is denied by default.

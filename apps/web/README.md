@@ -146,8 +146,14 @@ It uses the website's light/dark theme and shared credit footer.
 - **Total payable** = principal + fixed interest (a peso amount, not a percentage). 10,000 + 1,250 = 11,250.
 - **Outstanding balance** = total payable − sum of all payments. It is *calculated live* from the payments, so
   it can never drift out of sync with what collectors entered.
-- **Collection days** are every day except **Sundays** and **holidays** (managed on the *Holidays* page).
-- **Due date** = the Nth collection day after the date of approval (N = 45, 50 or 58).
+- **Collection days** include Sundays by default and exclude registered **holidays**
+  (managed on the *Holidays* page). Settings → Configurations → Loan schedule can
+  enable **Skip Sundays when counting loan days**. The default is **Off**, persisted
+  in `settings/Configurations/elements/loanSchedule.skipSundays`.
+- **Due date** = the Nth eligible loan day after approval (N = 30, 45, 50 or 58).
+  Changing the schedule preference recalculates current-loan due dates, statuses,
+  renewal eligibility and index-card due dates across signed-in web sessions.
+  Archived renewal dates remain unchanged.
 - **Status:** `Paid` (green) = nothing left to pay · `Due` (red) = due date reached or passed with a balance left ·
   `Pending` (yellow) = still inside the loan term with a balance left.
 - Whether the approval date itself counts as day 1 is one setting: `COUNT_APPROVAL_DATE_AS_DAY_ONE` in
@@ -161,7 +167,7 @@ All dates are plain `"YYYY-MM-DD"` strings. Money is a number in pesos.
 The collector app signs in with Firebase Authentication (email + password).
 
 **`clients/{id}`** – `lastName`, `firstName`, `middleName`, `address`, `cellphone`, `principal` (number),
-`interest` (number), `loanTermDays` (45 | 50 | 58), `approvalDate`, `dailyAmount`, `clientNumber` and
+`interest` (number), `loanTermDays` (30 | 45 | 50 | 58), `approvalDate`, `dailyAmount`, `clientNumber` and
 `transactionNumber`. Collectors have **read-only** access. Preserve legacy document IDs in payment references.
 
 **`payments/{id}`** – what the Android app **creates** (it cannot edit or delete):
@@ -211,8 +217,18 @@ publishing the updated web build. Android files remain unchanged.
   enforce roles, field validation, loan-cycle boundaries, and paired changes. Browser transactions
   cannot lock queries against new matching receipts from another writer, so this configuration
   does not guarantee global overpayment prevention across simultaneous devices.
-- Consolidation / Liquidation is a live, paginated 58-day ledger. Its balance is
-  principal minus current-loan payments; the dashboard's loan outstanding also includes interest.
+- Consolidation / Liquidation is a live, paginated 58-day ledger. Payable Amount is
+  principal plus fixed interest; Balance is Payable Amount minus included current-loan
+  payments. Principal is displayed for reference. Configure dates to preview and apply
+  an inclusive collection-date window; only payments within From–To are deducted.
+  Clear dates for all current-loan receipts. Filtered period balances are not historical
+  closing balances. This reporting calculation introduces no stored balance fields.
+- Consolidation **Net Income** sums `payableAmount − principal` for matched current
+  loans. This is contracted interest before expenses and collection, not realized net
+  profit. Date windows affect payments and balances, not the full contracted interest.
+- Print Studio defaults to **A4** for index cards, promissory notes and daily summaries.
+  Untouched former template defaults migrate to A4; saved customized layouts remain
+  intact. Reset print options restores the saved layout for the selected document.
 - The daily-payable minimum is optional and applies to collector receipts. Web admins
   may enter smaller partial/final settlements. The prepared rules must be published
   to enforce this in Android; its UI remains unchanged. See the Android context above.

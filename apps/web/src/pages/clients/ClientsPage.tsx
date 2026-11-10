@@ -17,6 +17,7 @@ import { dailyPayable, publicClientId } from '../../lib/printables';
 import { Link } from 'react-router-dom';
 import { Modal } from '../../components/Modal';
 import { useAuth } from '../../context/AuthContext';
+import { useSettings } from '../../context/SettingsContext';
 import { renewalEligibility } from '../../lib/renewal';
 import { isAdminRole } from '../../lib/roles';
 import { RenewalModal, RenewalHistoryModal } from './RenewalModal';
@@ -48,6 +49,7 @@ function matchesSearch(row: ClientRow, term: string): boolean {
 export default function ClientsPage() {
   const { rows, payments, holidays, today, loading, error } = useData();
   const { profile } = useAuth();
+  const { settings } = useSettings();
   const holidayDates = useMemo(() => new Set(holidays.map((h) => h.date)), [holidays]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -160,7 +162,7 @@ export default function ClientsPage() {
                     <td className="selection-col"><SelectionCheckbox label={`Select ${formatClientName(client)}`} checked={selection.selected.has(client.id)} onChange={() => selection.toggle(client.id)} /></td>
                     <td className="client-identity">
                       <strong title={formatClientName(client)}>{formatClientName(client)}</strong>
-                      <div className="client-contact"><span>{client.cellphone}</span><button type="button" className="client-address-link" title={client.address} aria-label={`View full address for ${formatClientName(client)}`} onClick={() => setModal({ type: 'address', client })}><Icon name="info" size={13} />Address</button></div>
+                      <div className="client-contact"><span>{client.cellphone || 'N/A'}</span><button type="button" className="client-address-link" title={client.address} aria-label={`View full address for ${formatClientName(client)}`} onClick={() => setModal({ type: 'address', client })}><Icon name="info" size={13} />Address</button></div>
                       <div className="muted small">{publicClientId(client)} · Txn {client.transactionNumber || 'Pending'}</div>
                       {!!client.renewalCount && isAdminRole(profile?.role) && <button type="button" className="renewal-tag" onClick={() => setModal({ type: 'renewal-history', clientId: client.id })}>Renewal history · {client.renewalCount}</button>}
                     </td>
@@ -179,7 +181,7 @@ export default function ClientsPage() {
                     </td>
                     <td className="actions-col"><div className="client-row-actions">
                       {summary.status === 'paid' && isAdminRole(profile?.role) && (() => {
-                        const eligibility = renewalEligibility(client, payments, holidayDates, today);
+                        const eligibility = renewalEligibility(client, payments, holidayDates, today, settings.schedule.skipSundays);
                         return <button type="button" className="btn btn-small btn-primary" disabled={!eligibility.eligible || !!error || !client.transactionNumber} title={eligibility.reason} onClick={() => setModal({ type: 'renew', clientId: client.id })}>Renew</button>;
                       })()}{' '}
                       <Link className="btn btn-small" to={`/printables?client=${encodeURIComponent(client.id)}`} title="Prepare this client's documents"><Icon name="print" size={13} />Print</Link>{' '}

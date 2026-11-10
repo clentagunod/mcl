@@ -58,7 +58,24 @@
 .ledger-live-status { display: inline-flex; align-items: center; gap: .45rem; white-space: nowrap; font-size: .75rem; color: var(--muted); padding: .5rem .7rem; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); }
 .ledger-live-status > span { width: 6px; height: 6px; border-radius: 50%; background: #29916b; }
 .ledger-live-status[data-state='paused'] > span { background: #b88a2a; }
-.stat-grid.ledger-stat-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin-bottom: .8rem; }
+.stat-grid.ledger-stat-grid { grid-template-columns: repeat(var(--ledger-metric-columns, 5), minmax(0, 1fr)); gap: 1rem; margin-bottom: .8rem; }
+.ledger-window-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .8rem; margin-bottom: 1rem; padding: .9rem 1rem; }
+.ledger-window-label { display: flex; align-items: center; gap: .4rem; color: var(--muted); font-size: .72rem; margin-bottom: .25rem; }
+.ledger-window-label svg, .ledger-window-actions svg { width: 15px; height: 15px; }
+.ledger-window-bar strong { font-size: .9rem; }
+.ledger-window-bar p { color: var(--muted); font-size: .73rem; margin: .25rem 0 0; }
+.ledger-window-actions { display: flex; flex-wrap: wrap; gap: .45rem; }
+.ledger-window-actions .btn { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; }
+.ledger-window-presets { display: flex; flex-wrap: wrap; gap: .45rem; margin: 1rem 0; }
+.ledger-window-dates { margin-top: 1.2rem; }
+.ledger-window-preview { border: 1px solid var(--border); background: var(--surface-alt, var(--bg)); border-radius: var(--radius); padding: 1rem; margin: .25rem 0 1rem; }
+.ledger-window-preview h3 { margin: 0 0 .45rem; font-size: .9rem; }
+.ledger-window-preview p { color: var(--muted); font-size: .75rem; margin: .4rem 0 0; }
+.ledger-window-preview dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; margin: 1rem 0; }
+.ledger-window-preview dt { color: var(--muted); font-size: .73rem; }
+.ledger-window-preview dd { margin: .3rem 0 0; font-size: 1rem; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ledger-window-explanation { padding: .7rem .8rem; border-left: 3px solid var(--primary); background: color-mix(in srgb, var(--primary) 5%, var(--surface)); color: var(--muted); font-size: .76rem; line-height: 1.6; }
+.ledger-window-explanation strong { color: var(--text); }
 .ledger-stat { min-width: 0; }
 .ledger-stat-top { display: flex; align-items: center; gap: .5rem; justify-content: space-between; margin-bottom: .8rem; }
 .ledger-stat-top .stat-label { margin: 0; }
@@ -95,12 +112,13 @@
 .consolidation-card .consolidation-table .after-term { background: color-mix(in srgb, var(--muted) 6%, var(--surface)); }
 .consolidation-card .consolidation-table .loan-endpoint { background: color-mix(in srgb, #f2c348 24%, var(--surface)); box-shadow: inset 0 0 0 1px #b48a29; }
 .consolidation-card .consolidation-table .ledger-total { background: color-mix(in srgb, var(--primary) 7%, var(--surface)); }
-.ledger-history-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; padding: 1rem 0 1.25rem; }
+.ledger-history-totals { display: grid; grid-template-columns: repeat(var(--ledger-metric-columns, 5), minmax(0, 1fr)); gap: .75rem; padding: 1rem 0 1.25rem; }
 .ledger-history-totals > div { padding: .8rem; border: 1px solid var(--border); border-radius: 7px; background: var(--surface-alt, var(--bg)); }
 .ledger-history-totals span { display: block; color: var(--muted); font-size: .75rem; margin-bottom: .3rem; }
 .ledger-history-totals strong { font-size: 1rem; font-variant-numeric: tabular-nums; }
 
 @media (max-width: 1150px) {
+  .stat-grid.ledger-stat-grid, .ledger-history-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .print-workspace-panel .print-studio { grid-template-columns: minmax(250px, 285px) minmax(0, 1fr); gap: 1rem; }
   .document-type-tabs .print-tab { padding: .85rem .7rem; gap: .5rem; }
   .document-type-tabs .document-type-icon { display: none; }
@@ -113,6 +131,9 @@
   .ledger-reading-guide { grid-template-columns: 1fr; gap: .5rem; }
 }
 @media (max-width: 650px) {
+  .ledger-window-actions { width: 100%; }
+  .ledger-window-actions .btn { flex: 1; }
+  .ledger-window-preview dl { grid-template-columns: 1fr; gap: .7rem; }
   .print-tabs.document-type-tabs { grid-template-columns: 1fr; gap: .5rem; }
   .document-type-tabs .print-tab { padding: .75rem .8rem; }
   .document-type-tabs .document-type-icon { display: grid; width: 32px; height: 34px; }

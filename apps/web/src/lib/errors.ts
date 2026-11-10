@@ -13,7 +13,7 @@ const MESSAGES: Record<string, string> = {
   'auth/operation-not-allowed':
     'Email/Password sign-in is not enabled. Turn it on in Firebase Console -> Authentication -> Sign-in method.',
   'permission-denied':
-    'You do not have permission to do that. Make sure the Firestore rules are published and your admin profile exists.',
+    'Firestore denied this operation. Active admin and developer accounts are supported. Check that the current shared rules are published to the same Firebase project used by this app.',
   unavailable: 'Cannot reach the server right now. Check your internet connection.',
 };
 

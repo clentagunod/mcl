@@ -6,6 +6,7 @@ import { collection, deleteDoc, doc, getDoc, getDocs, query, serverTimestamp, se
 
 let environment;
 const policyPath = 'settings/Configurations/elements/paymentPolicy';
+const schedulePath = 'settings/Configurations/elements/loanSchedule';
 before(async () => {
   environment = await initializeTestEnvironment({ projectId: 'demo-mcl-policy', firestore: { host: '127.0.0.1', port: 8188, rules: await readFile('firestore.rules', 'utf8') } });
 });
@@ -23,12 +24,225 @@ beforeEach(async () => {
       setDoc(doc(db, 'clients/mcl0001'), { principal: 10000, interest: 1250, loanTermDays: 45, dailyAmount: 250, approvalDate: '2026-11-01' }),
       setDoc(doc(db, 'settings/Configurations/elements/counters'), { clientSequence: 1, transactionSequence: 1 }),
       setDoc(doc(db, policyPath), { enforceDailyMinimum: false }),
+      setDoc(doc(db, schedulePath), { skipSundays: false }),
     ]);
   });
 });
 after(async () => { await environment?.cleanup(); });
 
 const as = (uid) => environment.authenticatedContext(uid).firestore();
+
+test('only active admins and developers can persist an attributed boolean identifier reset policy', async () => {
+  const path = 'settings/Configurations/elements/identifierPolicy';
+  for (const uid of ['admin', 'developer']) {
+    const ref = doc(as(uid), path);
+    const policy = { resetWhenEmpty: true, updatedAt: serverTimestamp(), updatedBy: uid };
+    await assertSucceeds(setDoc(ref, policy));
+    await assertSucceeds(updateDoc(ref, { resetWhenEmpty: false, updatedAt: serverTimestamp() }));
+    for (const change of [{ resetWhenEmpty: 'true' }, { resetWhenEmpty: 1 }, { updatedBy: 'other' }, { updatedAt: new Date(0) }, { extra: true }]) {
+      await assertFails(setDoc(ref, { ...policy, ...change }));
+    }
+    await assertFails(setDoc(ref, { resetWhenEmpty: true }));
+  }
+  for (const uid of ['collector', 'inactive-admin', 'inactive-developer', 'missing']) {
+    await assertFails(getDoc(doc(as(uid), path)));
+    await assertFails(setDoc(doc(as(uid), path), { resetWhenEmpty: true, updatedAt: serverTimestamp(), updatedBy: uid }));
+  }
+});
+
+test('admins and developers persist typed optional metric visibility; required metrics cannot be configured', async () => {
+  const path = 'settings/Configurations/elements/consolidationMetrics';
+  const visibility = { balance: false, interestCollected: false, expenseAmount: false, netIncome: false, principalReleased: false, cashSurplus: false };
+  for (const uid of ['admin', 'developer']) {
+    const ref = doc(as(uid), path);
+    await assertSucceeds(setDoc(ref, { ...visibility, updatedAt: serverTimestamp(), updatedBy: uid }));
+    await assertSucceeds(getDoc(ref));
+    for (const key of Object.keys(visibility)) {
+      await assertSucceeds(updateDoc(ref, { [key]: true, updatedAt: serverTimestamp(), updatedBy: uid }));
+    }
+    for (const changes of [{ balance: 'true' }, { cashSurplus: 0 }, { updatedBy: 'other' }, { updatedAt: new Date(0) },
+      { totalPayment: false }, { principal: false }, { payableAmount: false }, { contractedInterest: false }, { unknown: true }]) {
+      await assertFails(setDoc(ref, { ...visibility, updatedAt: serverTimestamp(), updatedBy: uid, ...changes }));
+    }
+    await assertFails(setDoc(ref, { balance: true, updatedAt: serverTimestamp(), updatedBy: uid }));
+  }
+  for (const uid of ['collector', 'inactive-admin', 'inactive-developer', 'missing']) {
+    await assertFails(getDoc(doc(as(uid), path)));
+    await assertFails(setDoc(doc(as(uid), path), { ...visibility, updatedAt: serverTimestamp(), updatedBy: uid }));
+  }
+});
+
+test('historical Android receipt rules recognize active developers for business data and settings', async () => {
+  const legacy = await initializeTestEnvironment({ projectId: 'demo-mcl-legacy-developer', firestore: {
+    host: '127.0.0.1', port: 8188, rules: await readFile('../android/firestore.collector-edits.rules', 'utf8'),
+  } });
+  try {
+    await legacy.clearFirestore();
+    await legacy.withSecurityRulesDisabled(async context => {
+      await setDoc(doc(context.firestore(), 'users/developer'), { role: 'developer', active: true });
+      await setDoc(doc(context.firestore(), 'users/inactive-developer'), { role: 'developer', active: false });
+      await setDoc(doc(context.firestore(), 'clients/client'), { principal: 10000 });
+    });
+    const developer = legacy.authenticatedContext('developer').firestore();
+    await assertSucceeds(getDocs(collection(developer, 'clients')));
+    await assertSucceeds(setDoc(doc(developer, 'settings/Configurations/elements/general'), { businessName: 'Developer workspace' }));
+    await assertSucceeds(getDocs(collection(developer, 'settings/Configurations/elements')));
+    await assertFails(getDocs(collection(legacy.authenticatedContext('inactive-developer').firestore(), 'clients')));
+    await assertFails(getDocs(collection(legacy.unauthenticatedContext().firestore(), 'clients')));
+  } finally { await legacy.cleanup(); }
+});
+
+const accountingPath = 'settings/Configurations/elements/accountingPolicy';
+const accountingPolicy = (enabled = true, changes = {}) => ({ paymentAllocation: 'principalFirst', expensesEnabled: enabled, updatedAt: serverTimestamp(), updatedBy: 'admin', ...changes });
+const categoryData = (changes = {}) => ({ name: 'Fuel', active: true, revision: 1, updatedAt: serverTimestamp(), updatedBy: 'admin', ...changes });
+const expenseData = (changes = {}) => ({ categoryId: 'fuel', categoryName: 'Fuel', amount: 200, expenseDate: '2026-11-02', description: 'Paid fuel', reference: 'Receipt 1', clientId: '', loanId: '', status: 'posted', voidReason: '', revision: 1, createdAt: serverTimestamp(), createdBy: 'admin', updatedAt: serverTimestamp(), updatedBy: 'admin', ...changes });
+async function enableExpenses() {
+  const db = as('admin');
+  await assertSucceeds(setDoc(doc(db, accountingPath), accountingPolicy()));
+  await assertSucceeds(setDoc(doc(db, 'expenseCategories/fuel'), categoryData()));
+  return db;
+}
+function writeExpense(db, id, data) {
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'expenses', id), data);
+  batch.set(doc(db, 'expenses', id, 'history', String(data.revision)), data);
+  return batch.commit();
+}
+
+test('accounting settings are typed, attributed, and private to active administrators', async () => {
+  for (const actor of ['admin', 'developer']) {
+    for (const paymentAllocation of ['principalFirst', 'proportional']) {
+      await assertSucceeds(setDoc(doc(as(actor), accountingPath), accountingPolicy(true, { updatedBy: actor, paymentAllocation })));
+    }
+    for (const changes of [{ paymentAllocation: 'interestFirst' }, { expensesEnabled: 'true' }, { updatedBy: 'someone-else' }, { updatedAt: new Date(0) }, { surprise: true }]) {
+      await assertFails(setDoc(doc(as(actor), accountingPath), accountingPolicy(true, { updatedBy: actor, ...changes })));
+    }
+  }
+  for (const uid of ['collector', 'inactive', 'inactive-admin', 'inactive-developer', 'missing']) {
+    await assertFails(getDoc(doc(as(uid), accountingPath)));
+    await assertFails(setDoc(doc(as(uid), accountingPath), accountingPolicy()));
+  }
+});
+
+test('disabling expenses blocks writes but preserves authorized admin reads and records', async () => {
+  const db = as('admin');
+  await assertFails(setDoc(doc(db, 'expenseCategories/fuel'), categoryData()));
+  await enableExpenses();
+  await assertSucceeds(writeExpense(db, 'cost', expenseData()));
+  await assertSucceeds(getDocs(collection(db, 'expenses')));
+  await assertSucceeds(setDoc(doc(db, accountingPath), accountingPolicy(false)));
+  await assertSucceeds(getDocs(collection(db, 'expenses')));
+  await assertFails(writeExpense(db, 'another', expenseData()));
+  await assertFails(updateDoc(doc(db, 'expenseCategories/fuel'), { active: false, revision: 2, updatedAt: serverTimestamp() }));
+  await assertSucceeds(setDoc(doc(db, accountingPath), accountingPolicy()));
+  assert.equal((await getDoc(doc(db, 'expenses/cost'))).data().amount, 200);
+});
+
+test('developer expense listeners remain authorized before enablement and after disablement', async () => {
+  const db = as('developer');
+  await assertSucceeds(getDocs(collection(db, 'expenses')));
+  await assertSucceeds(getDocs(collection(db, 'expenseCategories')));
+  await assertSucceeds(setDoc(doc(db, accountingPath), accountingPolicy(true, { updatedBy: 'developer' })));
+  await assertSucceeds(setDoc(doc(db, 'expenseCategories/fuel'), categoryData({ updatedBy: 'developer' })));
+  await assertSucceeds(writeExpense(db, 'developer-cost', expenseData({ createdBy: 'developer', updatedBy: 'developer' })));
+  await assertSucceeds(setDoc(doc(db, accountingPath), accountingPolicy(false, { updatedBy: 'developer' })));
+  await assertSucceeds(getDocs(collection(db, 'expenses')));
+  await assertSucceeds(getDocs(collection(db, 'expenseCategories')));
+  await assertSucceeds(getDocs(collection(db, 'expenses/developer-cost/history')));
+  await assertFails(writeExpense(db, 'blocked-cost', expenseData({ createdBy: 'developer', updatedBy: 'developer' })));
+  for (const uid of ['collector', 'inactive-admin', 'inactive-developer', 'missing']) {
+    await assertFails(getDocs(collection(as(uid), 'expenses')));
+    await assertFails(getDocs(collection(as(uid), 'expenseCategories')));
+  }
+});
+
+test('expenses require immutable revision history and reject malformed financial data', async () => {
+  const db = await enableExpenses();
+  await assertFails(setDoc(doc(db, 'expenses/no-history'), expenseData()));
+  for (const [index, changes] of [
+    { amount: 0 }, { amount: -1 }, { amount: .001 }, { amount: 1000000000 },
+    { expenseDate: '2026-02-30' }, { expenseDate: '2099-01-01' }, { description: '' },
+    { categoryId: 'missing' }, { categoryName: 'Wrong name' }, { clientId: 'mcl0001', loanId: '' },
+    { clientId: 'mcl0001', loanId: 'old-cycle' }, { clientId: 'mcl0001', loanId: 'initial', expenseDate: '2026-10-31' },
+    { createdBy: 'someone-else' }, { updatedBy: 'someone-else' }, { revision: 2 }, { unexpected: true },
+  ].entries()) await assertFails(writeExpense(db, `bad-${index}`, expenseData(changes)));
+  await assertSucceeds(writeExpense(db, 'cost', expenseData({ clientId: 'mcl0001', loanId: 'initial' })));
+  const first = (await getDoc(doc(db, 'expenses/cost'))).data();
+  const correction = { ...first, amount: 300, revision: 2, updatedAt: serverTimestamp() };
+  await assertSucceeds(writeExpense(db, 'cost', correction));
+  await assertFails(writeExpense(db, 'cost', correction));
+  await assertFails(updateDoc(doc(db, 'expenses/cost/history/1'), { amount: 900 }));
+  await assertFails(deleteDoc(doc(db, 'expenses/cost/history/1')));
+  await assertFails(deleteDoc(doc(db, 'expenses/cost')));
+  const wrongHistory = writeBatch(db);
+  wrongHistory.set(doc(db, 'expenses/cost'), { ...correction, amount: 400, revision: 3, updatedAt: serverTimestamp() });
+  wrongHistory.set(doc(db, 'expenses/cost/history/3'), { ...correction, amount: 500, revision: 3, updatedAt: serverTimestamp() });
+  await assertFails(wrongHistory.commit());
+});
+
+test('archived types stop new expenses; voiding previous loans retains all financial fields', async () => {
+  const db = await enableExpenses();
+  await assertSucceeds(writeExpense(db, 'cost', expenseData({ clientId: 'mcl0001', loanId: 'initial' })));
+  await assertSucceeds(updateDoc(doc(db, 'expenseCategories/fuel'), { active: false, revision: 2, updatedAt: serverTimestamp() }));
+  await assertFails(writeExpense(db, 'new-cost', expenseData()));
+  await environment.withSecurityRulesDisabled(async context => updateDoc(doc(context.firestore(), 'clients/mcl0001'), { activeLoanId: 'renewal' }));
+  const first = (await getDoc(doc(db, 'expenses/cost'))).data();
+  await assertFails(writeExpense(db, 'cost', { ...first, status: 'void', voidReason: 'Duplicate', amount: 900, revision: 2, updatedAt: serverTimestamp() }));
+  await assertSucceeds(writeExpense(db, 'cost', { ...first, status: 'void', voidReason: 'Duplicate', revision: 2, updatedAt: serverTimestamp() }));
+  await assertFails(writeExpense(db, 'cost', { ...first, revision: 3, updatedAt: serverTimestamp() }));
+});
+
+test('multiline descriptions and void reasons are valid while blank text is rejected', async () => {
+  const db = await enableExpenses();
+  await assertFails(writeExpense(db, 'blank', expenseData({ description: ' \n\t ' })));
+  await assertSucceeds(writeExpense(db, 'multiline', expenseData({ description: 'Fuel for collections\nSecond receipt included' })));
+  const first = (await getDoc(doc(db, 'expenses/multiline'))).data();
+  await assertFails(writeExpense(db, 'multiline', { ...first, status: 'void', voidReason: ' \n ', revision: 2, updatedAt: serverTimestamp() }));
+  await assertSucceeds(writeExpense(db, 'multiline', { ...first, status: 'void', voidReason: 'Duplicate entry\nSee original receipt', revision: 2, updatedAt: serverTimestamp() }));
+});
+
+test('collectors, inactive accounts and anonymous users cannot read or write expenses and types', async () => {
+  const db = await enableExpenses();
+  await assertSucceeds(writeExpense(db, 'cost', expenseData()));
+  for (const other of [as('collector'), as('inactive-admin'), as('inactive-developer'), as('missing'), environment.unauthenticatedContext().firestore()]) {
+    await assertFails(getDocs(collection(other, 'expenses')));
+    await assertFails(getDoc(doc(other, 'expenses/cost')));
+    await assertFails(getDocs(collection(other, 'expenseCategories')));
+    await assertFails(getDocs(collection(other, 'expenses/cost/history')));
+    await assertFails(writeExpense(other, 'new', expenseData()));
+    await assertFails(setDoc(doc(other, 'expenseCategories/new'), categoryData()));
+  }
+});
+
+test('only active collectors can get the loan schedule; collection reads and all writes stay private', async () => {
+  const collector = as('collector');
+  assert.equal((await assertSucceeds(getDoc(doc(collector, schedulePath)))).data().skipSundays, false);
+  await assertFails(getDocs(collection(collector, 'settings/Configurations/elements')));
+  await assertFails(setDoc(doc(collector, schedulePath), { skipSundays: true, updatedAt: serverTimestamp(), updatedBy: 'collector' }));
+  await assertFails(updateDoc(doc(collector, schedulePath), { skipSundays: true }));
+  await assertFails(deleteDoc(doc(collector, schedulePath)));
+  for (const db of [as('inactive'), as('inactive-admin'), as('inactive-developer'), as('missing'), environment.unauthenticatedContext().firestore()]) {
+    await assertFails(getDoc(doc(db, schedulePath)));
+    await assertFails(setDoc(doc(db, schedulePath), { skipSundays: true, updatedAt: serverTimestamp(), updatedBy: 'admin' }));
+  }
+});
+
+test('administrators persist a typed, attributed Sunday policy visible to collectors', async () => {
+  for (const actor of ['admin', 'developer']) {
+    const ref = doc(as(actor), schedulePath);
+    for (const skipSundays of [true, false]) {
+      await assertSucceeds(setDoc(ref, { skipSundays, updatedAt: serverTimestamp(), updatedBy: actor }));
+      assert.equal((await getDoc(doc(as('collector'), schedulePath))).data().skipSundays, skipSundays);
+    }
+    for (const changes of [
+      { skipSundays: 'false' }, { skipSundays: 0 }, { updatedBy: 'another-admin' },
+      { updatedAt: new Date(0) }, { unexpected: true },
+    ]) {
+      await assertFails(setDoc(ref, { skipSundays: true, updatedAt: serverTimestamp(), updatedBy: actor, ...changes }));
+    }
+    await assertFails(setDoc(ref, { skipSundays: true }));
+  }
+});
 
 const accountProfile = (role, changes = {}) => ({
   role, fullName: 'New Account', email: 'account@example.com', phone: '', active: true,
@@ -157,6 +371,21 @@ test('only administrators can read Trash; malformed writes and unpaired deletion
 const payment = (amount, extra = {}) => ({ clientId: 'mcl0001', amount, paymentDate: '2026-11-02', collectorId: 'collector', collectorName: 'Collector', createdAt: serverTimestamp(), ...extra });
 let sequence = 0;
 const write = (db, amount, extra) => setDoc(doc(db, 'payments', `receipt-${++sequence}`), payment(amount, extra));
+
+test('receipt corrections are admin-only and preserve collector attribution and recording time', async () => {
+  await assertSucceeds(setDoc(doc(as('collector'), 'payments/correction'), payment(250)));
+  await assertFails(updateDoc(doc(as('collector'), 'payments/correction'), { amount: 200 }));
+  await assertFails(updateDoc(doc(as('inactive-admin'), 'payments/correction'), { amount: 200 }));
+  const ref = doc(as('admin'), 'payments/correction');
+  await assertSucceeds(updateDoc(ref, { amount: 200, paymentDate: '2026-11-01', notes: 'Admin correction' }));
+  for (const change of [{ collectorId: 'admin' }, { collectorName: 'Admin' }, { clientId: 'another' }, { createdAt: serverTimestamp() }]) {
+    await assertFails(updateDoc(ref, change));
+  }
+  const saved = (await getDoc(ref)).data();
+  assert.equal(saved.amount, 200);
+  assert.equal(saved.collectorId, 'collector');
+  assert.equal(saved.collectorName, 'Collector');
+});
 
 test('unrestricted collectors can record smaller, agreed or larger payments', async () => {
   const db = as('collector');

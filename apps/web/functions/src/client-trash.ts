@@ -1,6 +1,9 @@
 import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { isAdminRole } from '../../src/lib/roles';
+import { currentIdentifierReservation, identifierEpoch } from '../../src/lib/identifiers';
+import { canResetIdentifiers } from './identifier-reset';
+import { randomUUID } from 'node:crypto';
 
 type Entry = { id: string; trashId?: string };
 const fail = (message: string): never => { throw new HttpsError('failed-precondition', message); };
@@ -26,6 +29,7 @@ export async function manageClientTrash(db: Firestore, uid: string, request: unk
   }
   const operationId = command.operationId;
   const operationRef = db.doc(`clientTrashOperations/${operationId}`);
+  const counterRef = db.doc('settings/Configurations/elements/counters');
   const requestKey = JSON.stringify({ operation, entries: entries.map(entry => ({ id: entry.id, trashId: entry.trashId ?? null })) });
   const activeRefs = entries.map(entry => db.doc(`clients/${entry.id}`));
   const trashRefs = entries.map(entry => db.doc(`clientTrash/${entry.id}`));
@@ -39,6 +43,8 @@ export async function manageClientTrash(db: Firestore, uid: string, request: unk
       if (previous.data()?.requestKey !== requestKey) fail('This operation identifier has already been used for a different selection.');
       if (previous.data()?.status === 'complete') return true;
     }
+    const counters = await tx.get(counterRef);
+    const epoch = identifierEpoch(counters.data());
     const active = documents.slice(0, entries.length);
     const trash = documents.slice(entries.length);
     // Reserve imported/legacy identifiers too. With 75 clients the worst case is
@@ -77,12 +83,13 @@ export async function manageClientTrash(db: Firestore, uid: string, request: unk
       }
     });
     reserved.forEach(document => {
-      if (!document.exists) {
+      if (!currentIdentifierReservation(document.data(), epoch)) {
         const owner = active.find(client => document.ref.parent.id === 'transactions'
           ? client.data()?.transactionNumber === document.id : client.id === document.id || client.data()?.clientNumber === document.id);
-        if (owner) tx.create(document.ref, { clientId: owner.id });
+        if (owner) tx.set(document.ref, { clientId: owner.id, ...(epoch ? { identifierEpoch: epoch } : {}) });
       }
     });
+    tx.set(counterRef, { updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     tx.set(operationRef, { operation, requestKey, actorId: uid,
       status: operation === 'purge' ? 'pending' : 'complete', updatedAt: FieldValue.serverTimestamp() });
     return operation !== 'purge';
@@ -91,7 +98,7 @@ export async function manageClientTrash(db: Firestore, uid: string, request: unk
 
   // Purging is deliberately resumable. The marker prevents restoration after a
   // partial cleanup, and every bounded transaction checks that the ID is inactive.
-  // Receipt audit events and identifier reservations remain immutable.
+  // Receipt audit events are retained; optional resets retire old reservations.
   const clientRef = activeRefs[0];
   const trashRef = trashRefs[0];
   for (;;) {
@@ -99,6 +106,7 @@ export async function manageClientTrash(db: Firestore, uid: string, request: unk
       const [actor, archive, active, attempt] = await tx.getAll(db.doc(`users/${uid}`), trashRef, clientRef, operationRef);
       if (!isAdminRole(actor.data()?.role) || actor.data()?.active === false) throw new HttpsError('permission-denied', 'Only active administrators can manage Trash.');
       if (attempt.data()?.status === 'complete') return true;
+      await tx.get(counterRef);
       if (!archive.exists || archive.data()?.trashId !== entries[0].trashId
         || archive.data()?.purgeOperationId !== operationId || active.exists) fail('Trash changed during deletion. Refresh and retry.');
       const [payments, renewals] = await Promise.all([
@@ -106,6 +114,8 @@ export async function manageClientTrash(db: Firestore, uid: string, request: unk
         tx.get(clientRef.collection('renewals').limit(100)),
       ]);
       if (payments.empty && renewals.empty) {
+        const reset = await canResetIdentifiers(db, tx, clientRef.id);
+        tx.set(counterRef, { ...(reset ? { clientSequence: 0, transactionSequence: 0, identifierEpoch: randomUUID() } : {}), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
         tx.delete(trashRef);
         tx.update(operationRef, { status: 'complete', updatedAt: FieldValue.serverTimestamp() });
         return true;

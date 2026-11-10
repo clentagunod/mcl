@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { readFile } from 'node:fs/promises';
 import { initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { collection, deleteDoc, doc, getDoc, getDocs, serverTimestamp, setDoc, Timestamp, updateDoc, writeBatch, type Firestore } from 'firebase/firestore';
+import { DEFAULT_SETTINGS } from '../src/config/settings';
 
 const state = vi.hoisted(() => ({ db: null as Firestore | null, auth: { currentUser: null as { uid: string } | null } }));
 vi.mock('../src/config/firebase', () => ({ get db() { return state.db; }, auth: state.auth }));
@@ -34,6 +35,8 @@ beforeEach(async () => {
       setDoc(doc(db, 'payments/settlement'), { clientId: 'c', amount: 11250, paymentDate: '2026-10-23',
         collectorId: 'collector', collectorName: 'Collector', createdAt: serverTimestamp() }),
       setDoc(doc(db, 'settings/Configurations/elements/counters'), { clientSequence: 1, transactionSequence: 1 }),
+      // These existing renewal fixtures model the previous Sunday-skipping schedule.
+      setDoc(doc(db, 'settings/Configurations/elements/loanSchedule'), { skipSundays: true }),
       setDoc(doc(db, 'settings/Identifiers/transactions/00001'), { clientId: 'c' }),
     ]);
   });
@@ -44,13 +47,15 @@ async function services(uid = 'admin') {
   state.db = environment.authenticatedContext(uid).firestore();
   state.auth.currentUser = { uid };
   vi.resetModules();
-  const [renewals, trash, payments, converters, settings, trashOperations] = await Promise.all([
+  const [renewals, trash, payments, converters, settings, trashOperations, expenses, clients] = await Promise.all([
     import('../src/services/renewals'), import('../src/services/client-trash'),
     import('../src/services/payments'), import('../src/services/converters'),
     import('../src/services/settings'), import('../src/services/client-trash-operations'),
+    import('../src/services/expenses'),
+    import('../src/services/clients'),
   ]);
   const db = state.db;
-  return { db, ...renewals, ...trash, ...payments, ...settings, ...trashOperations,
+  return { db, ...renewals, ...trash, ...payments, ...settings, ...trashOperations, ...expenses, ...clients,
     readClient: async () => {
       const source = await getDoc(doc(db, 'clients/c'));
       if (!source.exists()) throw new Error('Missing test client.');
@@ -64,7 +69,56 @@ async function services(uid = 'admin') {
   };
 }
 
+describe('developer accounting access through production services', () => {
+  it.each(['admin', 'developer'])('%s persists metric visibility through initialization without changing accounting policy', async uid => {
+    const service = await services(uid);
+    await service.initializeSettings(uid);
+    const saved = { ...structuredClone(DEFAULT_SETTINGS), schedule: { skipSundays: true } };
+    const next = { ...saved, consolidationMetrics: { balance: true, interestCollected: true, expenseAmount: false, netIncome: true, principalReleased: false, cashSurplus: true } };
+    await service.saveSettings(next, uid, saved);
+    await service.initializeSettings(uid);
+    expect((await getDoc(doc(service.db, 'settings/Configurations/elements/consolidationMetrics'))).data())
+      .toMatchObject({ ...next.consolidationMetrics, updatedBy: uid });
+    expect((await getDoc(doc(service.db, 'settings/Configurations/elements/accountingPolicy'))).data()).toMatchObject(saved.accounting);
+    await expect(service.saveSettings(saved, uid, saved)).rejects.toThrow('another session');
+  });
+  it.each(['admin', 'developer'])('%s can initialize and save settings, manage types, and record/correct/void expenses with history', async uid => {
+    const service = await services(uid);
+    await service.initializeSettings(uid);
+    const saved = { ...structuredClone(DEFAULT_SETTINGS), schedule: { skipSundays: true } };
+    const next = { ...saved, accounting: { paymentAllocation: 'proportional' as const, expensesEnabled: true } };
+    await service.saveSettings(next, uid, saved);
+    await service.saveExpenseCategory('Transport', true, undefined, 'transport');
+    await service.saveExpense('expense', { categoryId: 'transport', categoryName: 'Transport', amount: 100,
+      expenseDate: '2026-11-02', description: 'Collection trip', reference: '', clientId: 'c', loanId: 'initial' });
+    await service.saveExpense('expense', { categoryId: 'transport', categoryName: 'Transport', amount: 125,
+      expenseDate: '2026-11-02', description: 'Collection trip', reference: '', clientId: 'c', loanId: 'initial' }, 1);
+    const expense = service.expenseFromDoc(await getDoc(doc(service.db, 'expenses/expense')) as Parameters<typeof service.expenseFromDoc>[0]);
+    await service.voidExpense(expense, 'Duplicate');
+    expect((await getDocs(collection(service.db, 'expenses/expense/history'))).size).toBe(3);
+    expect((await getDoc(doc(service.db, 'expenses/expense'))).data()).toMatchObject({ status: 'void', updatedBy: uid, createdBy: uid });
+    await service.saveExpenseCategory('Transport', false, { id: 'transport', name: 'Transport', active: true, revision: 1 });
+  });
+});
+
 describe('Spark renewals', () => {
+  it('renews a settled 30-day loan into another 30-day cycle and accepts its next receipt', async () => {
+    const service = await services();
+    await updateDoc(doc(service.db, 'clients/c'), { loanTermDays: 30, dailyAmount: 375 });
+    await updateDoc(doc(service.db, 'payments/settlement'), { paymentDate: '2026-09-25' });
+    const original = await service.readClient();
+    await service.renewClient(original, { ...terms, loanTermDays: 30, dailyAmount: 750 }, 'Thirty-day renewal');
+    const active = await service.readClient();
+    const history = (await getDoc(doc(service.db, 'clients/c/renewals/00002'))).data()!;
+    expect(active).toMatchObject({ loanTermDays: 30, dailyAmount: 750, activeLoanId: '00002' });
+    expect(history.previousLoan.loanTermDays).toBe(30);
+    expect(history.newLoan.loanTermDays).toBe(30);
+    const collectorDb = environment.authenticatedContext('collector').firestore();
+    await setDoc(doc(collectorDb, 'payments/thirty-day-receipt'), { clientId: 'c', loanId: '00002', amount: 750, paymentDate: terms.approvalDate,
+      collectorId: 'collector', collectorName: 'Collector', notes: 'First collection for 30-day cycle', createdAt: serverTimestamp() });
+    expect(await service.readPayment('thirty-day-receipt')).toMatchObject({ loanId: '00002', amount: 750, collectorId: 'collector' });
+  });
+
   it.each(['admin', 'developer'])('%s can renew atomically without a Cloud Function', async uid => {
     const service = await services(uid);
     const original = await service.readClient();
@@ -121,12 +175,186 @@ describe('Spark renewals', () => {
   });
 });
 
+describe('Spark loan schedule settings', () => {
+  it('persists both Sunday settings across initialization and another administrator session', async () => {
+    const service = await services();
+    const { DEFAULT_SETTINGS, mergeSettings } = await import('../src/config/settings');
+    const policyPath = 'settings/Configurations/elements/loanSchedule';
+    await deleteDoc(doc(service.db, policyPath));
+    await service.initializeSettings('admin');
+    expect((await getDoc(doc(service.db, policyPath))).data()?.skipSundays).toBe(false);
+    let expected = structuredClone(DEFAULT_SETTINGS);
+    for (const skipSundays of [true, false, true]) {
+      const next = { ...expected, schedule: { skipSundays } };
+      await service.saveSettings(next, 'admin', expected);
+      await service.initializeSettings('admin');
+      const saved = (await getDoc(doc(service.db, policyPath))).data()!;
+      expect(mergeSettings({ schedule: saved }).schedule.skipSundays).toBe(skipSundays);
+      expect(saved.updatedBy).toBe('admin');
+      expected = next;
+    }
+    const secondSession = environment.authenticatedContext('developer').firestore();
+    expect((await getDoc(doc(secondSession, policyPath))).data()?.skipSundays).toBe(true);
+    const collector = environment.authenticatedContext('collector').firestore();
+    expect((await getDoc(doc(collector, policyPath))).data()?.skipSundays).toBe(true);
+    await expect(updateDoc(doc(collector, policyPath), { skipSundays: false })).rejects.toThrow();
+    await expect(service.saveSettings(DEFAULT_SETTINGS, 'admin', DEFAULT_SETTINGS)).rejects.toThrow('changed in another session');
+  });
+
+  it.each(['missing', false, true] as const)('assesses an October 23 settlement using Sunday policy %s', async policy => {
+    const service = await services();
+    const policyRef = doc(service.db, 'settings/Configurations/elements/loanSchedule');
+    if (policy === 'missing') await deleteDoc(policyRef);
+    else await setDoc(policyRef, { skipSundays: policy, updatedAt: serverTimestamp(), updatedBy: 'admin' });
+    const original = await service.readClient();
+    if (policy === true) {
+      await expect(service.renewClient(original, terms, 'Sunday policy eligibility')).resolves.toBeUndefined();
+      const history = (await getDoc(doc(service.db, 'clients/c/renewals/00002'))).data()!;
+      expect(history.paidOn).toBe('2026-10-23');
+      expect(history.dueDate).toBe('2026-10-23');
+    } else {
+      await expect(service.renewClient(original, terms, '')).rejects.toThrow('after its due date');
+      expect((await getDocs(collection(service.db, 'clients/c/renewals'))).size).toBe(0);
+      expect((await getDoc(doc(service.db, 'settings/Configurations/elements/counters'))).data()?.transactionSequence).toBe(1);
+    }
+  });
+
+  it.each(['missing', false, true] as const)('archives both actual due dates using Sunday policy %s', async policy => {
+    const service = await services();
+    const { computeSchedule } = await import('../src/lib/loan');
+    const policyRef = doc(service.db, 'settings/Configurations/elements/loanSchedule');
+    if (policy === 'missing') await deleteDoc(policyRef);
+    else await setDoc(policyRef, { skipSundays: policy, updatedAt: serverTimestamp(), updatedBy: 'admin' });
+    await updateDoc(doc(service.db, 'payments/settlement'), { paymentDate: '2026-10-15' });
+    await service.renewClient(await service.readClient(), terms, 'On-time under either schedule');
+    const history = (await getDoc(doc(service.db, 'clients/c/renewals/00002'))).data()!;
+    expect(history.dueDate).toBe(computeSchedule(client.approvalDate, client.loanTermDays, new Set(), terms.approvalDate, undefined, policy === true).dueDate);
+    expect(history.newDueDate).toBe(computeSchedule(terms.approvalDate, terms.loanTermDays, new Set(), terms.approvalDate, undefined, policy === true).dueDate);
+    expect(history.newDueDate).toBe(policy === true ? '2026-12-30' : '2026-12-22');
+  });
+});
+
+describe('optional numbering resets', () => {
+  async function recycleAndPurge(service: Awaited<ReturnType<typeof services>>, id: string) {
+    await service.createTrashAction('trash', [{ id }])();
+    const archive = (await getDoc(doc(service.db, 'clientTrash', id))).data()!;
+    await service.createTrashAction('purge', [{ id, trashId: archive.trashId }])();
+  }
+  async function enable(service: Awaited<ReturnType<typeof services>>, uid = 'admin') {
+    await setDoc(doc(service.db, 'settings/Configurations/elements/identifierPolicy'), { resetWhenEmpty: true, updatedAt: serverTimestamp(), updatedBy: uid });
+  }
+
+  it('preserves counters and historical reservations when the preference is off', async () => {
+    const service = await services();
+    await recycleAndPurge(service, 'c');
+    expect((await getDoc(doc(service.db, 'settings/Configurations/elements/counters'))).data()).toMatchObject({ clientSequence: 1, transactionSequence: 1 });
+    await service.addClient(client);
+    expect((await getDoc(doc(service.db, 'clients/mcl0002'))).data()).toMatchObject({ clientNumber: 'mcl0002', transactionNumber: '00002' });
+  });
+
+  it.each(['admin', 'developer'])('%s restarts both numbers after the final purge with fresh internal IDs and no old expense association', async uid => {
+    const service = await services(uid);
+    await service.initializeSettings(uid);
+    const saved = { ...structuredClone(DEFAULT_SETTINGS), schedule: { skipSundays: true } };
+    const next = { ...saved, identifiers: { resetWhenEmpty: true } };
+    await service.saveSettings(next, uid, saved);
+    await service.initializeSettings(uid);
+    expect((await getDoc(doc(service.db, 'settings/Configurations/elements/identifierPolicy'))).data()?.resetWhenEmpty).toBe(true);
+    await service.createTrashAction('trash', [{ id: 'c' }])();
+    const archive = (await getDoc(doc(service.db, 'clientTrash/c'))).data()!;
+    expect((await getDoc(doc(service.db, 'settings/Configurations/elements/counters'))).data()?.clientSequence).toBe(1);
+    const purge = service.createTrashAction('purge', [{ id: 'c', trashId: archive.trashId }]);
+    await purge(); await purge();
+    const counters = (await getDoc(doc(service.db, 'settings/Configurations/elements/counters'))).data()!;
+    expect(counters).toMatchObject({ clientSequence: 0, transactionSequence: 0 });
+    expect(typeof counters.identifierEpoch).toBe('string');
+    await Promise.all([service.addClient(client), service.addClient(client)]);
+    const created = (await getDocs(collection(service.db, 'clients'))).docs.map(source => ({ ...source.data(), id: source.id }));
+    expect(created.map(record => record.clientNumber).sort()).toEqual(['mcl0001', 'mcl0002']);
+    expect(created.map(record => record.transactionNumber).sort()).toEqual(['00001', '00002']);
+    expect(new Set(created.map(record => record.id)).size).toBe(2);
+    expect(created.every(record => !['c', 'mcl0001', 'mcl0002'].includes(record.id))).toBe(true);
+    const { buildConsolidation } = await import('../src/lib/consolidation');
+    const { clientFromDoc } = await import('../src/services/converters');
+    const current = (await getDocs(collection(service.db, 'clients'))).docs.map(clientFromDoc);
+    const oldCost = { id: 'old-expense', clientId: 'c', loanId: 'initial', status: 'posted', amount: 200 } as import('../src/types/expenses').Expense;
+    expect(buildConsolidation(current, [], 'principalFirst', [oldCost]).every(row => row.expenseAmount === 0)).toBe(true);
+  });
+
+  it('does not reset while active clients or recoverable Trash remain; concurrent final purges reset once empty', async () => {
+    const service = await services();
+    await enable(service);
+    await service.addClient(client); // c is still active; this is number 2.
+    await recycleAndPurge(service, 'c');
+    expect((await getDoc(doc(service.db, 'settings/Configurations/elements/counters'))).data()).toMatchObject({ clientSequence: 2, transactionSequence: 2 });
+    await service.addClient(client);
+    await service.addClient(client);
+    await service.createTrashAction('trash', [{ id: 'mcl0002' }, { id: 'mcl0003' }, { id: 'mcl0004' }])();
+    const entries = (await getDocs(collection(service.db, 'clientTrash'))).docs.map(source => ({ id: source.id, trashId: source.data().trashId }));
+    await service.createTrashAction('purge', [entries[0]])();
+    expect((await getDoc(doc(service.db, 'settings/Configurations/elements/counters'))).data()).toMatchObject({ clientSequence: 4, transactionSequence: 4 });
+    await Promise.all(entries.slice(1).map(entry => service.createTrashAction('purge', [entry])()));
+    expect((await getDocs(collection(service.db, 'clientTrash'))).empty).toBe(true);
+    expect((await getDoc(doc(service.db, 'settings/Configurations/elements/counters'))).data()).toMatchObject({ clientSequence: 0, transactionSequence: 0 });
+    await service.addClient(client);
+    expect((await getDocs(collection(service.db, 'clients'))).docs[0].data()).toMatchObject({ clientNumber: 'mcl0001', transactionNumber: '00001' });
+  });
+
+  it('serializes a final purge against a concurrent client creation without duplicate numbers', async () => {
+    const service = await services();
+    await enable(service);
+    await service.createTrashAction('trash', [{ id: 'c' }])();
+    const archive = (await getDoc(doc(service.db, 'clientTrash/c'))).data()!;
+    await Promise.all([
+      service.createTrashAction('purge', [{ id: 'c', trashId: archive.trashId }])(),
+      service.addClient(client),
+    ]);
+    await service.addClient(client);
+    const current = (await getDocs(collection(service.db, 'clients'))).docs;
+    expect(current).toHaveLength(2);
+    expect(new Set(current.map(record => record.data().clientNumber)).size).toBe(2);
+    expect(new Set(current.map(record => record.data().transactionNumber)).size).toBe(2);
+    expect(current.every(record => record.id !== 'c')).toBe(true);
+    const highest = Math.max(...current.map(record => Number(record.data().transactionNumber)));
+    expect((await getDoc(doc(service.db, 'settings/Configurations/elements/counters'))).data()?.transactionSequence).toBe(highest);
+  });
+
+  it('starts at 1 when enabled after earlier permanent deletion and renews past retired reservations', async () => {
+    const service = await services();
+    await service.renewClient(await service.readClient(), terms, 'Prior loan');
+    await recycleAndPurge(service, 'c');
+    await enable(service);
+    await service.addClient(client);
+    const source = (await getDocs(collection(service.db, 'clients'))).docs[0];
+    const { clientFromDoc } = await import('../src/services/converters');
+    const current = clientFromDoc(source);
+    expect(current).toMatchObject({ clientNumber: 'mcl0001', transactionNumber: '00001' });
+    await service.addPayment({ clientId: current.id, amount: 11250, paymentDate: '2026-10-15', collectorId: 'admin', collectorName: 'Admin' }, 'new-settlement');
+    await service.renewClient(current, terms, 'New generation renewal');
+    expect((await getDoc(doc(service.db, 'clients', current.id))).data()?.transactionNumber).toBe('00002');
+    expect((await getDoc(doc(service.db, 'settings/Identifiers/transactions/00002'))).data()?.clientId).toBe(current.id);
+  });
+
+  it('resets after automatic retention cleanup permanently removes the final client', async () => {
+    const service = await services();
+    await enable(service);
+    await service.createTrashAction('trash', [{ id: 'c' }])();
+    await environment.withSecurityRulesDisabled(async context => {
+      await setDoc(doc(context.firestore(), 'settings/Configurations/elements/trashPolicy'), { autoDeleteDays: 3 });
+      await updateDoc(doc(context.firestore(), 'clientTrash/c'), { deletedAt: Timestamp.fromMillis(Date.now() - 4 * 86_400_000) });
+    });
+    await service.purgeExpiredClientTrash();
+    expect((await getDoc(doc(service.db, 'settings/Configurations/elements/counters'))).data()).toMatchObject({ clientSequence: 0, transactionSequence: 0 });
+  });
+});
+
 describe('Spark Trash', () => {
   it('persists every retention option and preserves the policy across initialization and sessions', async () => {
     const service = await services();
     const { DEFAULT_SETTINGS, mergeSettings } = await import('../src/config/settings');
     await service.initializeSettings('admin');
-    let expected = structuredClone(DEFAULT_SETTINGS);
+    const initial = { ...structuredClone(DEFAULT_SETTINGS), schedule: { skipSundays: true } };
+    let expected = structuredClone(initial);
     for (const autoDeleteDays of [3, 7, 30, 0] as const) {
       const next = { ...expected, trash: { autoDeleteDays } };
       await service.saveSettings(next, 'admin', expected);
@@ -138,7 +366,7 @@ describe('Spark Trash', () => {
     }
     const secondSession = environment.authenticatedContext('developer').firestore();
     expect((await getDoc(doc(secondSession, 'settings/Configurations/elements/trashPolicy'))).data()?.autoDeleteDays).toBe(0);
-    await expect(service.saveSettings({ ...expected, trash: { autoDeleteDays: 7 } }, 'admin', DEFAULT_SETTINGS)).resolves.toBeUndefined();
+    await expect(service.saveSettings({ ...expected, trash: { autoDeleteDays: 7 } }, 'admin', initial)).resolves.toBeUndefined();
     await expect(service.saveSettings(expected, 'admin', expected)).rejects.toThrow('changed in another session');
   });
 
@@ -250,6 +478,32 @@ describe('Spark Trash', () => {
 });
 
 describe('Spark receipts and permissions', () => {
+  it.each(['admin', 'developer'])('%s can correct a collector receipt without changing its attribution', async uid => {
+    const service = await services(uid);
+    const expected = await service.readPayment('settlement');
+    const correction = { amount: 11000, paymentDate: '2026-10-22', notes: 'Reconciled collector amount' };
+    await service.updatePayment('settlement', correction, expected);
+    await service.updatePayment('settlement', correction, expected);
+    const saved = await service.readPayment('settlement');
+    expect(saved).toMatchObject({ ...correction, id: expected.id, collectorId: 'collector', collectorName: 'Collector' });
+    expect(saved.createdAt?.getTime()).toBe(expected.createdAt?.getTime());
+    expect((await getDocs(collection(service.db, 'payments'))).size).toBe(1);
+    await expect(service.updatePayment('settlement', { ...correction, amount: 10999 }, expected)).rejects.toThrow('changed');
+    await service.addPayment({ clientId: 'c', amount: 250, paymentDate: '2026-10-22', collectorId: uid, collectorName: uid, notes: '' }, 'other');
+    await expect(service.updatePayment('settlement', { ...correction, amount: 11001 }, saved)).rejects.toThrow('remaining payable');
+  });
+
+  it('clears legacy notes and rejects corrections after a renewal', async () => {
+    const service = await services();
+    await updateDoc(doc(service.db, 'payments/settlement'), { note: 'Legacy Android note' });
+    const expected = await service.readPayment('settlement');
+    await service.updatePayment('settlement', { amount: expected.amount, paymentDate: expected.paymentDate, notes: '' }, expected);
+    expect((await service.readPayment('settlement')).notes).toBe('');
+    expect((await getDoc(doc(service.db, 'payments/settlement'))).data()).not.toHaveProperty('note');
+    await service.renewClient(await service.readClient(), terms, 'Closed cycle');
+    await expect(service.updatePayment('settlement', { amount: 11000, paymentDate: expected.paymentDate, notes: '' }, expected)).rejects.toThrow('loan changed');
+  });
+
   it('keeps receipt retries idempotent and never resurrects a deleted receipt', async () => {
     const service = await services();
     const input = { clientId: 'c', loanId: 'initial', amount: 10, paymentDate: '2026-11-02', collectorId: 'admin', collectorName: 'Admin', notes: '' };
@@ -271,6 +525,9 @@ describe('Spark receipts and permissions', () => {
     await expect(service.createTrashAction('trash', [{ id: 'c' }])()).rejects.toThrow('administrator');
     await expect(service.renewClient({ id: 'c', ...client }, terms, '')).rejects.toThrow('administrator');
     await expect(service.addPayment({ clientId: 'c', amount: 1, paymentDate: '2026-11-02', collectorId: uid, collectorName: uid }, 'denied')).rejects.toThrow('administrator');
+    await expect(service.updatePayment('settlement', { amount: 100, paymentDate: '2026-10-23', notes: '' }, {
+      id: 'settlement', clientId: 'c', amount: 11250, paymentDate: '2026-10-23', collectorId: 'collector', collectorName: 'Collector', createdAt: new Date(),
+    })).rejects.toThrow('administrator');
   });
 
   it('security rules require a complete recycle snapshot and preserve manual-only developer profiles', async () => {

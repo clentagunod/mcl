@@ -4,6 +4,7 @@ import { DataProvider } from '../context/DataProvider';
 import { Layout } from './Layout';
 import { LoadingState } from './StateMessage';
 import { SettingsProvider } from '../context/SettingsProvider';
+import { ExpensesProvider } from '../context/ExpensesContext';
 
 /**
  * Route guard: only a signed-in admin or developer reaches the pages below it.
@@ -18,7 +19,7 @@ export function RequireAdmin() {
   return (
     <SettingsProvider key={user!.uid}>
       <DataProvider>
-        <Layout />
+        <ExpensesProvider><Layout /></ExpensesProvider>
       </DataProvider>
     </SettingsProvider>
   );

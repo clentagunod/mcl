@@ -2,11 +2,13 @@ import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { renewalEligibility, hasGoodRenewalHistory, validateRenewalTerms } from '../../src/lib/renewal';
 import { loanId } from '../../src/lib/loan-cycle';
-import { formatSequence } from '../../src/lib/identifiers';
+import { currentIdentifierReservation, formatSequence, identifierEpoch } from '../../src/lib/identifiers';
 import { isISODate } from '../../src/lib/dates';
 import type { Client, Payment, RenewalRecord } from '../../src/types';
 import { computeSchedule } from '../../src/lib/loan';
 import { isAdminRole } from '../../src/lib/roles';
+import { LOAN_TERMS } from '../../src/config/app';
+import { mergeSettings } from '../../src/config/settings';
 
 /** No browser-supplied roles, balances, eligibility flags or audit names are trusted. */
 export async function renewClientLoan(db: Firestore, uid: string, request: unknown, today: string) {
@@ -24,28 +26,31 @@ export async function renewClientLoan(db: Firestore, uid: string, request: unkno
     if (!clientDoc.exists) throw new HttpsError('not-found', 'This client no longer exists.');
     const client = { ...clientDoc.data(), id: clientDoc.id } as Client;
     if (loanId(client) !== data.expectedLoanId || client.transactionNumber !== data.expectedTransactionNumber) throw new HttpsError('failed-precondition', 'The loan changed in another session. Close this form and try again.');
-    if (!isISODate(client.approvalDate) || ![45, 50, 58].includes(client.loanTermDays) || !Number.isFinite(client.principal) || client.principal <= 0 || !Number.isFinite(client.interest) || client.interest < 0) throw new HttpsError('failed-precondition', 'Correct the existing loan details before renewing.');
-    const [receipts, holidays, history, counters] = await Promise.all([
+    if (!isISODate(client.approvalDate) || !(LOAN_TERMS as readonly unknown[]).includes(client.loanTermDays) || !Number.isFinite(client.principal) || client.principal <= 0 || !Number.isFinite(client.interest) || client.interest < 0) throw new HttpsError('failed-precondition', 'Correct the existing loan details before renewing.');
+    const [receipts, holidays, history, counters, schedulePolicy] = await Promise.all([
       tx.get(db.collection('payments').where('clientId', '==', client.id)),
       tx.get(db.collection('holidays')),
       tx.get(clientRef.collection('renewals')),
       tx.get(db.doc('settings/Configurations/elements/counters')),
+      tx.get(db.doc('settings/Configurations/elements/loanSchedule')),
     ]);
+    const { skipSundays } = mergeSettings({ schedule: schedulePolicy.data() }).schedule;
     const payments = receipts.docs.map((p) => ({ ...p.data(), id: p.id } as Payment));
     const holidayDates = new Set<string>(holidays.docs.map((d) => d.data().date || d.id));
-    const assessment = renewalEligibility(client, payments, holidayDates, today);
+    const assessment = renewalEligibility(client, payments, holidayDates, today, skipSundays);
     if (!assessment.eligible || !assessment.paidOn) throw new HttpsError('failed-precondition', assessment.reason);
     if (history.size !== (client.renewalCount || 0) || !hasGoodRenewalHistory(history.docs.map((d) => d.data() as RenewalRecord))) throw new HttpsError('failed-precondition', 'Renewal history must be complete and contain only loans settled on time.');
     let terms;
     try { terms = validateRenewalTerms(data.terms, today, assessment.paidOn); }
     catch (error) { throw new HttpsError('invalid-argument', (error as Error).message); }
     let sequence = Number(counters.data()?.transactionSequence || 0);
+    const epoch = identifierEpoch(counters.data());
     let transactionNumber = '';
     for (let attempt = 0; attempt < 100; attempt += 1) {
       try { transactionNumber = formatSequence(++sequence, 5); }
       catch { throw new HttpsError('resource-exhausted', 'The five digit transaction number range is exhausted.'); }
       const reservation = await tx.get(db.doc(`settings/Identifiers/transactions/${transactionNumber}`));
-      if (!reservation.exists) break;
+      if (!currentIdentifierReservation(reservation.data(), epoch)) break;
       transactionNumber = '';
     }
     if (!transactionNumber) throw new HttpsError('resource-exhausted', 'Check the transaction allocation counter.');
@@ -67,13 +72,13 @@ export async function renewClientLoan(db: Firestore, uid: string, request: unkno
     tx.create(renewalRef, {
       sequence: renewalCount, previousLoan, newLoan, totalPaid: assessment.totalPaid,
       paidOn: assessment.paidOn, dueDate: assessment.dueDate,
-      newDueDate: computeSchedule(terms.approvalDate, terms.loanTermDays, holidayDates, today).dueDate,
+      newDueDate: computeSchedule(terms.approvalDate, terms.loanTermDays, holidayDates, today, undefined, skipSundays).dueDate,
       approvedBy: uid, approvedByName: actor.data()?.fullName || 'Administrator',
       notes: (data.notes as string).trim(), createdAt: FieldValue.serverTimestamp(),
     });
     tx.update(clientRef, { ...terms, transactionNumber, originalTransactionNumber: previousLoan.originalTransactionNumber, activeLoanId: renewalRef.id, renewalCount, updatedAt: FieldValue.serverTimestamp() });
     tx.set(db.doc('settings/Configurations/elements/counters'), { transactionSequence: sequence, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-    tx.create(db.doc(`settings/Identifiers/transactions/${transactionNumber}`), { clientId: client.id, loanId: renewalRef.id });
+    tx.set(db.doc(`settings/Identifiers/transactions/${transactionNumber}`), { clientId: client.id, loanId: renewalRef.id, ...(epoch ? { identifierEpoch: epoch } : {}) });
     return { renewalId: renewalRef.id, transactionNumber };
   });
 }

@@ -12,6 +12,7 @@ const ClientsPage = lazy(() => import('./pages/clients/ClientsPage'));
 const TrashPage = lazy(() => import('./pages/clients/TrashPage'));
 const PrintablesPage = lazy(() => import('./pages/PrintablesPage'));
 const LiquidationPage = lazy(() => import('./pages/LiquidationPage'));
+const ExpensesPage = lazy(() => import('./pages/ExpensesPage'));
 const CollectorsPage = lazy(() => import('./pages/collectors/CollectorsPage'));
 const HolidaysPage = lazy(() => import('./pages/HolidaysPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
@@ -30,6 +31,7 @@ export default function App() {
               <Route path="trash" element={<TrashPage />} />
               <Route path="printables" element={<PrintablesPage />} />
               <Route path="liquidation" element={<LiquidationPage />} />
+              <Route path="expenses" element={<ExpensesPage />} />
               <Route path="collectors" element={<CollectorsPage />} />
               <Route path="holidays" element={<HolidaysPage />} />
               <Route path="settings" element={<SettingsPage />} />

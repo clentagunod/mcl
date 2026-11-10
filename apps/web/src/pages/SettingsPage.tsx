@@ -5,6 +5,8 @@ import { PageHeader } from '../components/PageHeader';
 import { PrintLayoutFields } from '../components/PrintLayoutFields';
 import { LoadingState } from '../components/StateMessage';
 import { Icon } from '../components/Icon';
+import { SettingsSwitch } from '../components/SettingsSwitch';
+import { OPTIONAL_CONSOLIDATION_METRICS } from '../config/consolidation-metrics';
 import { DEFAULT_SETTINGS, validateSettings, type AppSettings, type PrintableKind, type TrashRetentionDays } from '../config/settings';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
@@ -18,7 +20,10 @@ const titles: Record<PrintableKind, string> = { index: 'Index Card', promissory:
 const sections = [
   { id: 'general', label: 'General', icon: 'settings', description: 'Workspace and client defaults' },
   { id: 'payments', label: 'Payment policy', icon: 'wallet', description: 'Collector payment requirements' },
-  { id: 'trash', label: 'Trash & retention', icon: 'trash', description: 'Automatic deletion preferences' },
+  { id: 'accounting', label: 'Collections & expenses', icon: 'wallet', description: 'Allocation and expense tracking' },
+  { id: 'consolidation', label: 'Consolidation metrics', icon: 'dashboard', description: 'Choose which metrics to show' },
+  { id: 'schedule', label: 'Loan schedule', icon: 'calendar', description: 'Sunday and due-date counting' },
+  { id: 'trash', label: 'Trash & retention', icon: 'trash', description: 'Recovery, cleanup and numbering' },
   { id: 'index', label: 'Index card', icon: 'file', description: 'Lender details and colors' },
   { id: 'promissory', label: 'Promissory note', icon: 'documents', description: 'Payee and note wording' },
   { id: 'studio', label: 'Print defaults', icon: 'print', description: 'Paper sizes and page layouts' },
@@ -93,7 +98,7 @@ function SettingsEditor({ saved, unavailable }: { saved: AppSettings; unavailabl
       <div className="settings-sections">
       {changedRemotely && <p className="alert alert-warning" role="status">Settings changed in another session. Reload saved settings before saving to avoid overwriting them. <button type="button" className="btn btn-small" onClick={reload}>Reload saved settings</button></p>}
       <fieldset id="settings-general" className="card settings-section" disabled={busy || unavailable}>
-        <legend>Configurations / General</legend>
+        <legend>General</legend>
         <p className="settings-section-intro">Set up your workspace name, client identifiers and everyday defaults.</p>
         <div className="form-grid">
           <FormField label="Website name"><input value={draft.general.businessName} maxLength={120} onChange={(e) => field('general', 'businessName', e.target.value)} /></FormField>
@@ -111,17 +116,57 @@ function SettingsEditor({ saved, unavailable }: { saved: AppSettings; unavailabl
       </fieldset>
 
       <fieldset id="settings-payments" className="card settings-section" disabled={busy || unavailable}>
-        <legend>Configurations / Payment policy</legend>
+        <legend>Payment policy</legend>
         <p className="settings-section-intro">Choose how the daily payable amount applies to collector receipts.</p>
-        <label className="check-label"><input type="checkbox" checked={draft.payments.enforceDailyMinimum}
-          onChange={(event) => { setDraft((previous) => ({ ...previous, payments: { enforceDailyMinimum: event.target.checked } })); setMessage(''); }} /> Require collectors to meet the daily payable amount</label>
-        <p className="field-hint">Off: daily payable is information only. On: each collector receipt must be at least the client’s saved daily payable amount. Larger payments remain allowed, subject to the outstanding balance in the collection app.</p>
-        <p className="muted small">The minimum applies to each receipt. Administrators can still record partial payments and final settlements below the minimum.</p>
+        <SettingsSwitch label="Require collectors to meet the daily payable amount" checked={draft.payments.enforceDailyMinimum}
+          description="Require each collector receipt to meet the saved daily amount. Administrators may still enter partial payments."
+          onChange={checked => { setDraft(previous => ({ ...previous, payments: { ...previous.payments, enforceDailyMinimum: checked } })); setMessage(''); }} />
+      </fieldset>
+
+      <fieldset id="settings-accounting" className="card settings-section" disabled={busy || unavailable}>
+        <legend>Collections & expenses</legend>
+        <p className="settings-section-intro">Choose how collections become earned interest. These reporting settings do not change loan terms or receipt amounts.</p>
+        <FormField label="Payment allocation" hint="Applies to all current-loan receipts, including earlier collections. Changing it recalculates reports immediately after saving.">
+          <select value={draft.accounting.paymentAllocation} onChange={event => {
+            setDraft(previous => ({ ...previous, accounting: { ...previous.accounting, paymentAllocation: event.target.value as AppSettings['accounting']['paymentAllocation'] } })); setMessage('');
+          }}><option value="principalFirst">Principal first</option><option value="proportional">Proportional allocation</option></select>
+        </FormField>
+        <div className="settings-allocation-example"><strong>Example: ₱10,000 principal + ₱1,250 interest; ₱5,000 collected</strong>
+          <p>{draft.accounting.paymentAllocation === 'principalFirst' ? 'Principal recovered: ₱5,000.00 · Interest collected: ₱0.00' : 'Principal recovered: ₱4,444.44 · Interest collected: ₱555.56'}</p>
+          <p className="field-hint">Principal first recovers the amount lent before recognizing interest. Proportional allocation splits receipts using the loan’s principal-to-interest ratio. Overpayments are never counted as additional interest.</p>
+        </div>
+        <SettingsSwitch label="Enable expenses" checked={draft.accounting.expensesEnabled}
+          description="Show Expenses in navigation and deduct recorded paid expenses in consolidation. Turning this off keeps saved records and excludes all expenses from calculations."
+          onChange={checked => { setDraft(previous => ({ ...previous, accounting: { ...previous.accounting, expensesEnabled: checked } })); setMessage(''); }} />
+      </fieldset>
+
+      <fieldset id="settings-consolidation" className="card settings-section" disabled={busy || unavailable}>
+        <legend>Consolidation metrics</legend>
+        <p className="settings-section-intro">Choose the additional metrics shown in consolidation cards, ledger columns, payment history and date-window previews. Changes apply to the shared workspace after saving.</p>
+        <p className="settings-required-metrics"><strong>Always shown:</strong> Total payment, Principal, Payable Amount and Contracted Interest.</p>
+        {OPTIONAL_CONSOLIDATION_METRICS.map(metric => <SettingsSwitch key={metric.key} label={metric.label} description={metric.description}
+          checked={draft.consolidationMetrics[metric.key]} onChange={checked => {
+            setDraft(previous => ({ ...previous, consolidationMetrics: { ...previous.consolidationMetrics, [metric.key]: checked } })); setMessage('');
+          }} />)}
+        <p className="field-hint">All optional metrics are off by default. These switches change visibility only. Calculations, allocation and expense deductions continue even when their metrics are hidden. Hiding Recorded expenses does not disable expense tracking.</p>
+      </fieldset>
+
+      <fieldset id="settings-schedule" className="card settings-section" disabled={busy || unavailable}>
+        <legend>Loan schedule</legend>
+        <p className="settings-section-intro">Choose whether Sundays count toward the loan term.</p>
+        <SettingsSwitch label="Skip Sundays when counting loan days" checked={draft.schedule.skipSundays}
+          description="Exclude Sundays from loan-day counting. Configured holidays are always excluded."
+          onChange={checked => { setDraft(previous => ({ ...previous, schedule: { ...previous.schedule, skipSundays: checked } })); setMessage(''); }} />
+        <p className="muted small">Saving this setting recalculates current loan due dates, statuses, renewal eligibility and printed due dates across the website. Existing payments and saved renewal history stay intact.</p>
       </fieldset>
 
       <fieldset id="settings-trash" className="card settings-section" disabled={busy || unavailable}>
-        <legend>Configurations / Trash</legend>
-        <p className="settings-section-intro">Give deleted clients a recovery period before they are permanently removed.</p>
+        <legend>Trash & retention</legend>
+        <p className="settings-section-intro">Manage recovery, permanent deletion and numbering after a full cleanup.</p>
+        <SettingsSwitch label="Reset numbering when all clients are permanently deleted" checked={draft.identifiers.resetWhenEmpty}
+          description={`Restart client IDs and transaction numbers at 1 only after both Clients and Trash are empty. The next numbers use your current format, for example ${draft.general.clientIdPrefix}${'1'.padStart(Math.min(10, Math.max(1, draft.general.clientIdDigits)), '0')} and 00001. Off keeps numbering continuous.`}
+          onChange={checked => { setDraft(previous => ({ ...previous, identifiers: { ...previous.identifiers, resetWhenEmpty: checked } })); setMessage(''); }} />
+        <p className="field-hint">Moving clients to Trash or permanently deleting only some clients does not restart numbering. Manual and automatic permanent deletion follow this preference. If the workspace is already empty when enabled, numbering restarts when the next client is created. Old records keep their internal references.</p>
         <FormField label="Automatically delete Trash" hint="The retention period starts when a client is moved to Trash. Changes also apply to clients already in Trash.">
           <select value={draft.trash.autoDeleteDays} onChange={(event) => {
             setDraft(previous => ({ ...previous, trash: { autoDeleteDays: Number(event.target.value) as TrashRetentionDays } }));
@@ -137,13 +182,14 @@ function SettingsEditor({ saved, unavailable }: { saved: AppSettings; unavailabl
       </fieldset>
 
       <fieldset id="settings-index" className="card settings-section" disabled={busy || unavailable}>
-        <legend>Printables / Index Template</legend>
+        <legend>Index card</legend>
         <p className="settings-section-intro">Customize the lender information and accents on printed index cards.</p>
         <div className="form-grid">
           <FormField label="Lender name"><input value={draft.index.businessName} maxLength={120} onChange={(e) => field('index', 'businessName', e.target.value)} /></FormField>
           <FormField label="Branch / location"><input value={draft.index.branch} maxLength={200} onChange={(e) => field('index', 'branch', e.target.value)} /></FormField>
           <FormField label="Mobile number"><input type="tel" value={draft.index.mobile} maxLength={40} onChange={(e) => field('index', 'mobile', e.target.value)} /></FormField>
-          <FormField label="Printed amount"><select value={draft.index.amountBasis} onChange={(e) => field('index', 'amountBasis', e.target.value)}><option value="total">Principal + interest</option><option value="principal">Principal only</option></select></FormField>
+          <SettingsSwitch label="Include interest in printed amount" checked={draft.index.amountBasis === 'total'} description="On: principal plus interest. Off: principal only. Loan balances stay the same."
+            onChange={checked => field('index', 'amountBasis', checked ? 'total' : 'principal')} />
           <FormField label="Heading accent"><input type="color" value={draft.index.headingColor} onChange={(e) => field('index', 'headingColor', e.target.value)} /></FormField>
           <FormField label="Payment cell accent"><input type="color" value={draft.index.cellColor} onChange={(e) => field('index', 'cellColor', e.target.value)} /></FormField>
         </div>
@@ -151,7 +197,7 @@ function SettingsEditor({ saved, unavailable }: { saved: AppSettings; unavailabl
       </fieldset>
 
       <fieldset id="settings-promissory" className="card settings-section" disabled={busy || unavailable}>
-        <legend>Printables / Promissory Template</legend>
+        <legend>Promissory note</legend>
         <p className="settings-section-intro">Keep payee details and the interest statement consistent across documents.</p>
         <div className="form-grid">
           <FormField label="Payee / person to pay"><input value={draft.promissory.payee} maxLength={200} onChange={(e) => field('promissory', 'payee', e.target.value)} /></FormField>
@@ -162,10 +208,10 @@ function SettingsEditor({ saved, unavailable }: { saved: AppSettings; unavailabl
       </fieldset>
 
       <fieldset id="settings-studio" className="card settings-section" disabled={busy || unavailable}>
-        <legend>Printables / Studio defaults</legend>
+        <legend>Print defaults</legend>
         <p className="settings-section-intro">Choose the starting page layout for each document. You can adjust individual print jobs in the studio.</p>
         {(Object.keys(titles) as PrintableKind[]).map((kind) => <div key={kind} className="settings-template"><h2>{titles[kind]}</h2><PrintLayoutFields value={draft.studio[kind]} onChange={(layout) => setDraft((previous) => ({ ...previous, studio: { ...previous.studio, [kind]: layout } }))} /></div>)}
-        <p className="muted small">The index workbook has no physical paper setup. Template size preserves its approximate 238 × 122 mm worksheet proportions for 45 days and grows for longer terms. The note uses its original A4 size and 12.7 mm margins. Studio overrides apply to the current session; these saved defaults apply across sessions.</p>
+        <p className="muted small">All documents default to A4; explicit saved paper choices are preserved. Template size keeps the index workbook’s approximate 238 × 122 mm proportions for 45 days and grows for longer terms. The note uses its original A4 size and 12.7 mm margins. Studio overrides apply to the current session; these saved defaults apply across sessions.</p>
       </fieldset>
       {error && <p className="alert alert-error" role="alert">{error}</p>}
       {message && <p className="alert alert-success" role="status">{message}</p>}

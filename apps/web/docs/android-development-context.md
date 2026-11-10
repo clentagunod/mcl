@@ -72,7 +72,7 @@ Administrators retain correction and partial/final settlement access.
 | `address`, `cellphone` | string | Address and mobile contact |
 | `principal` | number | Amount lent, in pesos |
 | `interest` | number | Fixed interest in pesos, not a percentage |
-| `loanTermDays` | number | 45, 50 or 58 |
+| `loanTermDays` | number | 30, 45, 50 or 58 |
 | `approvalDate` | string | Calendar date, `YYYY-MM-DD` |
 | `dailyAmount` | number | Saved agreed daily payable amount |
 | `clientNumber` | string | Public client identifier, e.g. `mcl0001` |
@@ -174,17 +174,52 @@ old Android app may display a generic error instead of the dedicated minimum mes
   shift them through UTC timestamp conversions. `createdAt` is a real server timestamp.
 - Loan outstanding: `max(0, principal + interest − current-loan payments)`. Existing Android
   validation checks positive amount, approval date and server-read outstanding amount.
-- The website's Consolidation / Liquidation sheet intentionally reports a different
-  figure: **principal − current-loan payments**, without clamping. Negative balance means payments
-  exceed principal. Do not replace loan outstanding with this reporting balance.
+- The website's Consolidation / Liquidation sheet uses **Payable Amount = principal +
+  interest**, with principal displayed for reference, and **Balance = Payable Amount −
+  included current-loan payments**, without clamping. A configured From–To window
+  includes only collection dates inside those inclusive bounds; its balance is a
+  period calculation, not a historical closing balance. Negative balance means included
+  payments exceed the payable amount. Do not replace loan outstanding with this report figure.
+- Consolidation's requested **Net Income** label means full contracted interest:
+  `sum(payableAmount − principal)` for matched current loans. It is not collected
+  interest or profit after expenses. Receipt date windows do not prorate it.
 - Index-card and consolidation day numbers are chronological **paying dates**, not
   elapsed calendar dates. Combine multiple same-date receipts. Skipped dates leave no
   gaps; backdated receipts/admin corrections can renumber subsequent paying dates.
 - The consolidation matrix has 58 visible day columns for all loan types and highlights
-  the client's 45/50/58-day endpoint. All later receipts remain in totals and history.
+  the client's 30/45/50/58-day endpoint. All later receipts remain in totals and history.
+  Date windows keep original paying-day positions instead of renumbering them.
   Android does not need to write anything special to populate this view.
+- Client `cellphone` remains a string; a blank value means unavailable and is shown
+  as N/A by the website. Index-card due dates use the same approval date, term,
+  configured Sunday skipping, holidays and approval-day policy as loan info; no saved due-date field is added.
+- Web administrators can correct payment amount/date/notes in place while retaining
+  the original collector identity and `createdAt`. Existing Android payment listeners
+  receive these updates without a document-shape change. Collector write permissions
+  remain create-only under the existing rules.
 - Daily Summary Sheet uses the selected actual collection date and stored collector
   names/notes, not the numbered index day.
+
+The shared schedule preference is **`settings/Configurations/elements/loanSchedule`**:
+`skipSundays` is a boolean, with missing documents/fields defaulting to **false**.
+Sunday is an ordinary loan day when false; when true, Sundays are excluded. Existing
+configured holidays are always excluded. Administrators save this document with
+`updatedAt` (server timestamp) and `updatedBy` (their UID). Rules validate those fields.
+Active collectors may get/listen to this exact document; listing settings or changing
+the policy remains forbidden. Do not fetch the whole settings collection as a collector.
+
+The web's live loan summaries, status badges, renewal eligibility and printed due
+dates use the saved preference. Renewals read it in the transaction; archived dates
+remain immutable. The hybrid `apps/android/mobile` adapter consumes the same shared
+calculation and exact-document policy subscription, and passes the actual holiday
+calendar to shared index-card rendering. Rebuild that application to include these
+source changes; publishing web code does not update installed APKs.
+
+Native Android variants have separate business logic. In particular, the legacy
+`apps/android2` implementation validates only 45/50/58 and always excludes Sundays;
+it has not been changed by this web update. It must gain 30-day support and consume
+the shared preference before it can display this calendar consistently. Do not assume
+unchanged installed native builds adopt a new web setting automatically.
 
 The current server-read balance check occurs before a receipt transaction. It does not
 serialize aggregate balances across concurrent collectors. A future requirement for
@@ -195,8 +230,10 @@ or server endpoint; the new minimum rule does not claim to provide that aggregat
 
 The web-scoped Firestore rules in `apps/web/firestore.rules` must be published before
 the payment policy is enforced in the live Android app. See [setup instructions](./print-studio.md#enable-firebase-persistence).
-The root rules are unchanged by the web-only scope; deploying the old root rules would
-remove the policy enforcement and settings permissions.
+The web rules and root deployment copy must stay synchronized with `npm run sync:rules`.
+This update extends renewal terms to 30 days and grants the exact loan-schedule read
+described above. Publish that shared ruleset before deploying the new web/hybrid builds.
+No client/payment document fields are renamed or removed.
 
 From `apps/web`:
 

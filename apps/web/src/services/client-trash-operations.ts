@@ -1,6 +1,8 @@
 import { collection, doc, getDocFromServer, getDocsFromServer, limit, query, runTransaction, serverTimestamp, Timestamp, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { readQueryDocuments, requireAdmin } from './firestore-admin';
+import { currentIdentifierReservation, identifierEpoch } from '../lib/identifiers';
+import { canResetIdentifiers } from './identifier-reset';
 
 export type TrashOperation = 'trash' | 'restore' | 'purge';
 export interface TrashEntry { id: string; trashId?: string }
@@ -19,6 +21,7 @@ export async function mutateTrashEntry(operation: TrashOperation, entry: TrashEn
   const clientRef = doc(db, 'clients', entry.id);
   const trashRef = doc(db, 'clientTrash', entry.id);
   const operationRef = doc(db, 'clientTrashOperations', operationId);
+  const counterRef = doc(db, 'settings/Configurations/elements/counters');
   const requestKey = JSON.stringify({ operation, entries: [{ id: entry.id, trashId: entry.trashId ?? null }] });
 
   const complete = await runTransaction(db, async transaction => {
@@ -30,6 +33,8 @@ export async function mutateTrashEntry(operation: TrashOperation, entry: TrashEn
     }
     const active = await transaction.get(clientRef);
     const archive = await transaction.get(trashRef);
+    const counters = await transaction.get(counterRef);
+    const epoch = identifierEpoch(counters.data());
     const data = archive.data();
     if (automatic) {
       // A restored or re-recycled client is never deleted using a stale selection.
@@ -49,7 +54,7 @@ export async function mutateTrashEntry(operation: TrashOperation, entry: TrashEn
       ...(validId(active.data()?.transactionNumber) ? [`settings/Identifiers/transactions/${active.data()!.transactionNumber}`] : []),
     ])] : [];
     const reserved = await Promise.all(reservations.map(path => transaction.get(doc(db, path))));
-    if (reserved.some(document => document.exists() && document.data().clientId !== entry.id)) {
+    if (reserved.some(document => currentIdentifierReservation(document.data(), epoch) && document.data()!.clientId !== entry.id)) {
       throw new Error('A client or transaction identifier belongs to another client. Correct it before moving this client to Trash.');
     }
     if (operation === 'trash') {
@@ -57,7 +62,7 @@ export async function mutateTrashEntry(operation: TrashOperation, entry: TrashEn
       transaction.set(trashRef, { client: active.data(), trashId: operationId,
         deletedAt: serverTimestamp(), deletedBy: actor.uid, deletedByName: actor.fullName, status: 'trashed' });
       transaction.delete(clientRef);
-      reserved.forEach(document => { if (!document.exists()) transaction.set(document.ref, { clientId: entry.id }); });
+      reserved.forEach(document => { if (!currentIdentifierReservation(document.data(), epoch)) transaction.set(document.ref, { clientId: entry.id, ...(epoch ? { identifierEpoch: epoch } : {}) }); });
     } else {
       if (!archive.exists() || !data || data.trashId !== entry.trashId) throw new Error('Trash changed in another session. Refresh the selection.');
       if (active.exists()) throw new Error('A client with this ID already exists. Nothing was overwritten.');
@@ -71,6 +76,8 @@ export async function mutateTrashEntry(operation: TrashOperation, entry: TrashEn
         transaction.update(trashRef, { status: 'purging', purgeOperationId: operationId });
       }
     }
+    // Serialize collection membership changes with numbering resets/allocations.
+    transaction.set(counterRef, { updatedAt: serverTimestamp() }, { merge: true });
     transaction.set(operationRef, { operation, requestKey, actorId: previous.data()?.actorId || actor.uid,
       status: operation === 'purge' ? 'pending' : 'complete', updatedAt: serverTimestamp() });
     return operation !== 'purge';
@@ -86,6 +93,7 @@ export async function mutateTrashEntry(operation: TrashOperation, entry: TrashEn
       if (attempt.data()?.status === 'complete') return true;
       const archive = await transaction.get(trashRef);
       const active = await transaction.get(clientRef);
+      await transaction.get(counterRef);
       if (!archive.exists() || archive.data().trashId !== entry.trashId
         || archive.data().purgeOperationId !== operationId || active.exists()) {
         throw new Error('Trash changed during deletion. Refresh and retry.');
@@ -95,6 +103,8 @@ export async function mutateTrashEntry(operation: TrashOperation, entry: TrashEn
         readQueryDocuments(transaction, query(collection(clientRef, 'renewals'), limit(100))),
       ]);
       if (payments.length === 0 && renewals.length === 0) {
+        const reset = await canResetIdentifiers(transaction, entry.id);
+        transaction.set(counterRef, { ...(reset ? { clientSequence: 0, transactionSequence: 0, identifierEpoch: crypto.randomUUID() } : {}), updatedAt: serverTimestamp() }, { merge: true });
         transaction.delete(trashRef);
         transaction.update(operationRef, { status: 'complete', updatedAt: serverTimestamp() });
         return true;

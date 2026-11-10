@@ -23,7 +23,7 @@ const documentDescriptions: Record<PrintableKind, string> = {
 };
 
 export default function PrintablesPage() {
-  const { clients, payments, today, loading, error: dataError } = useData();
+  const { clients, payments, holidays, today, loading, error: dataError } = useData();
   const { settings, loading: settingsLoading, error: settingsError } = useSettings();
   const [params] = useSearchParams();
   const [kind, setKind] = useState<PrintableKind>('index');
@@ -53,7 +53,7 @@ export default function PrintablesPage() {
   const date = summaryDate || today;
   const layout = overrides[kind] ?? settings.studio[kind];
   const layoutValid = validLayout(layout);
-  const job = useMemo<PrintJob>(() => ({ kind, clients: selected, totalClients: clients.length, payments, settings, layout, date, logoUrl: new URL(`${import.meta.env.BASE_URL}assets/logo.png`, window.location.origin).href }), [kind, selected, clients.length, payments, settings, layout, date]);
+  const job = useMemo<PrintJob>(() => ({ kind, clients: selected, totalClients: clients.length, payments, holidays, settings, layout, date, logoUrl: new URL(`${import.meta.env.BASE_URL}assets/logo.png`, window.location.origin).href }), [kind, selected, clients.length, payments, holidays, settings, layout, date]);
   const rendered = useMemo(() => {
     if (!selected.length || !layoutValid || !isISODate(date)) return { html: '', pages: 0, error: '' };
     try { return { ...renderPrintDocument(job), error: '' }; }
@@ -136,7 +136,7 @@ export default function PrintablesPage() {
             <FormField label="Collection date"><input type="date" value={date} max={today} onChange={(e) => setSummaryDate(e.target.value)} /></FormField>
             <p className="field-hint">The report includes checked clients, with zero shown for those without payments on this date. Multiple collectors and notes are retained. The grand total covers the selected clients.</p>
           </> : <>
-            <p className="field-hint">{kind === 'index' ? 'Sequential paying days; no gaps for missed dates. Manual signature spaces stay blank.' : 'Client details fill the supplied note. IDs, co-maker information and signatures stay blank.'}</p>
+            <p className="field-hint">{kind === 'index' ? `Due date follows the client’s loan schedule. ${settings.schedule.skipSundays ? 'Sundays and registered holidays are excluded.' : 'Sundays count; registered holidays are excluded.'} Paying days have no gaps for missed dates; signature spaces stay blank.` : 'Client details fill the supplied note. IDs, co-maker information and signatures stay blank.'}</p>
           </>}
           {isPrinting && <section className="studio-layout-section"><div className="studio-divider" />
             <h3><Icon name="settings" /> Paper &amp; layout</h3>

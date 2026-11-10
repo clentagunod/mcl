@@ -1,0 +1,15 @@
+.expense-types, .expense-ledger { margin-top: 1.25rem; }
+.expense-types summary { cursor: pointer; font-weight: 600; }
+.expense-category-list { list-style: none; padding: 0; margin-bottom: 0; }
+.expense-category-list li { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .8rem 0; border-bottom: 1px solid var(--border); }
+.expense-category-list small { margin-left: .5rem; }
+.expense-row-actions { display: flex; gap: .4rem; flex-wrap: wrap; }
+.expense-filters { display: grid; grid-template-columns: 2fr repeat(4, minmax(130px, 1fr)); gap: .8rem; margin: 1rem 0; }
+.expense-ledger .table-wrap { margin-top: 1rem; }
+.expense-ledger table { min-width: 850px; }
+.expense-ledger td p { margin: .3rem 0; max-width: 30rem; overflow-wrap: anywhere; }
+.expense-loan-label { display: block; color: var(--muted); }
+.expense-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.expense-revision { padding: 1rem 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+@media (max-width: 1000px) { .expense-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .expense-filters { grid-template-columns: 1fr; } .expense-category-list li { align-items: flex-start; flex-direction: column; } }

@@ -4,6 +4,7 @@ import { isMoney } from '../../src/lib/money';
 import { isISODate } from '../../src/lib/dates';
 import { dailyPayable } from '../../src/lib/printables';
 import { isAdminRole, isUserRole } from '../../src/lib/roles';
+import { LOAN_TERMS } from '../../src/config/app';
 
 const fail = (message: string): never => { throw new HttpsError('failed-precondition', message); };
 function identifier(value: unknown): value is string {
@@ -80,7 +81,7 @@ export async function mutateReceipt(db: Firestore, uid: string, request: unknown
     }
     if (operation !== 'delete') {
       if (!isMoney(client!.principal) || client!.principal <= 0 || !isMoney(client!.interest)
-        || !isISODate(client!.approvalDate) || ![45, 50, 58].includes(client!.loanTermDays)) fail('Correct the client loan details first.');
+        || !isISODate(client!.approvalDate) || !(LOAN_TERMS as readonly unknown[]).includes(client!.loanTermDays)) fail('Correct the client loan details first.');
       if ((input!.paymentDate as string) < client!.approvalDate || (input!.paymentDate as string) > today) fail('Choose a collection date from approval through today.');
       const [receipts, policy] = await Promise.all([
         tx.get(db.collection('payments').where('clientId', '==', clientId)),

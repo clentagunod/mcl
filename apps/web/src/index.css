@@ -837,7 +837,7 @@ tr.row-selected > td { background: var(--primary-soft); }
 .term-legend { display: inline-block; width: .8rem; height: .8rem; border: 1px solid #bd841b; background: #fff0bd; vertical-align: middle; }
 .consolidation-workspace { max-height: 70vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); --ledger-client-width: 220px; }
 .consolidation-workspace:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-.consolidation-table { width: calc(var(--ledger-client-width) + 6166px); table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: .85rem; }
+.consolidation-table { width: calc(var(--ledger-client-width) + 6426px); table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: .85rem; }
 .ledger-client-col { width: var(--ledger-client-width); }
 .consolidation-table th, .consolidation-table td { border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); padding: .55rem .6rem; background: var(--surface); }
 .consolidation-table thead th { position: sticky; top: 0; z-index: 3; background: var(--surface-alt); font-size: .72rem; white-space: normal; }

@@ -92,8 +92,10 @@ Consolidation / Liquidation is a website-only ledger based on `consolidation_ref
 It uses the existing shared client/payment subscriptions; it does not create report
 documents or issue a separate Firestore query per client. Each row shows name,
 transaction number, public client ID, release/approval date, term, 58 sequential paying
-day columns, total payment, principal and **principal − all payments**. The client's
-45/50/58 endpoint cell is highlighted. Receipts on the same collection date are summed;
+day columns, total payment, principal, **Payable Amount (principal + fixed interest)**
+and **Balance (Payable Amount − total payment)**. Principal is shown for reference
+and is not the amount used to subtract repayments. The client's
+30/45/50/58 endpoint cell is highlighted. Receipts on the same collection date are summed;
 missed dates introduce no gaps. Click a payment or the history link to inspect dates,
 receipt counts and all later days, including days after 58 and receipts after payoff.
 Those later receipts remain in totals. Negative balances are intentionally retained.
@@ -102,6 +104,43 @@ Search and term filters apply to the full ledger. The bottom grand totals and to
 summary cards cover **all matching clients**, across pages. The table offers pagination,
 frozen names, sticky headers and horizontal navigation to the final total columns.
 There are no print/export actions for this page.
+
+Use **Configure dates** to open the calculation window. Choose All dates, Today,
+Yesterday, Last 7 days, Last 30 days, This month (through today), Last month, or
+Custom dates. From and To are inclusive calendar dates matched against `paymentDate`,
+not the time the receipt was entered. Preview totals and receipt counts before
+applying; Cancel preserves the applied window. Missing, invalid or reversed dates
+cannot be applied. Clear dates restores the full ledger.
+
+The selected dates apply to amounts, history, summary cards, progress and grand totals
+across every matching page. Original paying-day numbers remain in place so date filters
+do not move loan endpoint highlights. Clients with no matching receipts remain visible
+with zero total payment. Full payable amounts remain unchanged: the selected-window
+balance deducts **only payments within From–To**, as requested, and does not represent
+historical closing debt. Only current loan cycles are included, not archived renewal
+cycles. No report documents or shared schema/rules changes are required.
+
+**Net Income** is shown per loan, in the summary cards, payment-history totals,
+window preview and grand total. It is the sum of **Payable Amount − Principal** for
+the matched current loans. For example, principal PHP 10,000 plus PHP 1,250 fixed
+interest gives payable PHP 11,250 and contracted interest PHP 1,250. This requested
+report label represents expected interest before collection and expenses, not actual
+net profit: expenses, taxes, losses and recognition of earned income are not tracked
+by this worksheet. Date windows change included receipts and balances; they do not
+prorate the full contracted interest. Client/term filters change the income total,
+and pagination does not limit the grand total to the visible page.
+
+Administrators and developers can use **Payments → Edit** to correct a collector's
+amount, collection date or notes. The original collector and recorded timestamp are
+preserved, and corrections update existing receipts. The service checks permissions,
+loan-cycle identity, the latest receipt and refreshed payable balance before saving.
+Concurrent corrections require reopening the editor; retrying an identical successful
+correction is safe. Collectors cannot edit receipts. Live client balances, index-card
+entries and consolidation reflect the correction through the existing subscriptions.
+
+Client cellphone numbers are optional. Leave the field blank or enter N/A; both save
+as the existing empty string representation. Supplied phone numbers still require a
+valid mobile format. No new Firestore field or Android migration is needed.
 
 Long client-list addresses are ellipsized to one bounded line. Hover reveals the full
 address; clicking or keyboard activation opens a wrapped, readable address dialog.
@@ -126,11 +165,25 @@ logo and compact client/transaction references. Signatures remain empty.
 The workbook does **not** contain a paper size, orientation or print area. Its column
 widths and occupied row heights yield an approximate 238 × 122 mm baseline for a
 45-day card. Template height grows by 5.08 mm per extra row for 50-/58-day loans.
-The studio allows standard paper sizes and explicit custom dimensions when a
+The studio defaults to **A4** for index cards, promissory notes and daily summaries.
+Index cards and daily summaries start in landscape; promissory notes start in
+portrait. Untouched former template defaults migrate to A4; explicitly saved Letter,
+Legal, custom dimensions and customized template layouts are preserved. New saved
+paper choices carry `paperDefaultVersion: 2`, so a later explicit Template size
+selection is not migrated again. HTML, PDF/browser printing and generated DOCX use
+the selected document's page dimensions. Reset print options restores its saved layout.
+
+The studio allows other standard paper sizes and explicit custom dimensions when a
 particular physical card size is required. It does not claim an unspecified physical
 size was copied exactly.
 
 Name, address, approval date, term and daily amount come from the selected client.
+Every index card, including continuation cards, also shows the automatic due date
+from the same loan schedule used in client loan information. It uses the active
+loan's approval date and term, excludes configured holidays, follows the saved
+**Skip Sundays** preference (Off by default), and respects
+the shared approval-day counting setting. This date is retained in print/PDF, HTML
+and Word exports and cannot be edited independently in the print studio.
 The amount can show principal alone or principal + interest. This display preference
 does not change the balance: outstanding is always principal + fixed interest less
 all repayments.

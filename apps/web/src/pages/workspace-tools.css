@@ -192,6 +192,23 @@
   .trash-list.card, .holiday-list.card { padding: 1rem; }
   .trash-recovery-note { padding: .9rem; }
 }
+.settings-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; padding: 1rem 0; }
+.settings-switch-row > div { min-width: 0; }
+.settings-switch-row label { font-weight: 600; cursor: pointer; }
+.settings-switch-row .field-hint { margin: .35rem 0 0; max-width: 44rem; font-weight: 400; }
+.settings-switch-control { display: inline-flex; align-items: center; gap: .5rem; position: relative; flex-shrink: 0; }
+.settings-switch-control input { position: absolute; opacity: 0; width: 44px; height: 26px; margin: 0; cursor: pointer; }
+.settings-switch-track { display: block; width: 44px; height: 26px; border-radius: 20px; background: var(--muted); border: 1px solid var(--border); pointer-events: none; }
+.settings-switch-track::after { content: ''; display: block; width: 18px; height: 18px; margin: 3px; border-radius: 50%; background: var(--surface); }
+.settings-switch-control input:checked + .settings-switch-track { background: var(--primary); }
+.settings-switch-control input:checked + .settings-switch-track::after { transform: translateX(18px); }
+.settings-switch-control input:focus-visible + .settings-switch-track { outline: 2px solid var(--primary); outline-offset: 4px; }
+.settings-switch-control input:disabled ~ span { opacity: .5; cursor: not-allowed; }
+.settings-switch-state { font-size: .8rem; min-width: 1.7rem; }
+.settings-allocation-example { background: var(--surface-alt); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; }
+.settings-required-metrics { padding: .85rem 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-alt); font-size: .85rem; line-height: 1.6; }
+#settings-consolidation .settings-switch-row + .settings-switch-row { border-top: 1px solid var(--border); }
+@media (max-width: 650px) { .settings-switch-row { gap: .8rem; align-items: flex-start; } }
 @media (prefers-reduced-motion: reduce) {
   .settings-nav-link, .tools-filter-pills button, .holiday-day { transition: none; }
 }

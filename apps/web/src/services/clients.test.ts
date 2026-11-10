@@ -33,7 +33,7 @@ vi.mock('firebase/firestore', () => ({
 import { addClient, completeClientRecords, updateClient } from './clients';
 import { clientFromDoc } from './converters';
 import { initializeSettings, saveSettings } from './settings';
-import { DEFAULT_SETTINGS } from '../config/settings';
+import { DEFAULT_SETTINGS, mergeSettings } from '../config/settings';
 
 const input: ClientInput = { firstName: 'Juan', lastName: 'Dela Cruz', middleName: '', address: 'San Miguel', cellphone: '09170000000', principal: 10000, interest: 1250, loanTermDays: 45, approvalDate: '2026-11-02', dailyAmount: 250 };
 beforeEach(() => { fake.documents.clear(); fake.writes = []; fake.queue = Promise.resolve(); });
@@ -103,10 +103,37 @@ describe('client allocations', () => {
 });
 
 describe('shared settings persistence', () => {
+  it('persists migrated A4 defaults and retains later explicit paper choices across reloads', async () => {
+    const studioPath = 'settings/Printables/elements/studio';
+    const legacyStudio = Object.fromEntries(Object.entries(DEFAULT_SETTINGS.studio).map(([kind, saved]) => {
+      const { paperDefaultVersion: _version, ...layout } = saved;
+      return [kind, { ...layout, paper: kind === 'summary' ? 'a4' : 'template' }];
+    }));
+    fake.documents.set(studioPath, legacyStudio);
+    await initializeSettings('admin');
+    const migrated = mergeSettings({ studio: fake.documents.get(studioPath) });
+    expect(Object.values(migrated.studio).every(layout => layout.paper === 'a4')).toBe(true);
+    await saveSettings(migrated, 'admin', migrated);
+    await initializeSettings('admin');
+    let reloaded = mergeSettings({ studio: fake.documents.get(studioPath) });
+    expect(reloaded.studio).toEqual(migrated.studio);
+    expect(Object.values(reloaded.studio).every(layout => layout.paperDefaultVersion === 2)).toBe(true);
+
+    const selected = structuredClone(reloaded);
+    selected.studio.index.paper = 'template';
+    selected.studio.promissory.paper = 'letter';
+    selected.studio.summary = { ...selected.studio.summary, paper: 'custom', widthMm: 190, heightMm: 260 };
+    await saveSettings(selected, 'admin', reloaded);
+    await initializeSettings('admin');
+    reloaded = mergeSettings({ studio: fake.documents.get(studioPath) });
+    expect(reloaded.studio).toEqual(selected.studio);
+  });
+
   it('creates missing settings once and preserves every existing saved setting', async () => {
     fake.documents.set('settings/Printables/elements/promissoryTemplate', { payee: 'Existing payee' });
     await initializeSettings('admin');
     expect(fake.documents.get('settings/Configurations/elements/general')).toMatchObject({ clientIdPrefix: 'mcl', updatedBy: 'admin' });
+    expect(fake.documents.get('settings/Configurations/elements/loanSchedule')).toMatchObject({ skipSundays: false, updatedBy: 'admin' });
     expect(fake.documents.get('settings/Printables/elements/promissoryTemplate')).toEqual({ payee: 'Existing payee' });
     const count = fake.writes.length;
     await initializeSettings('admin');
@@ -117,15 +144,42 @@ describe('shared settings persistence', () => {
     next.index.branch = 'New branch';
     next.payments.enforceDailyMinimum = true;
     next.trash.autoDeleteDays = 7;
+    next.schedule.skipSundays = true;
     await saveSettings(next, 'admin', DEFAULT_SETTINGS);
     expect(fake.documents.get('settings/Printables/elements/indexTemplate')).toMatchObject({ branch: 'New branch', updatedBy: 'admin' });
     expect(fake.documents.get('settings/Configurations/elements/paymentPolicy')).toMatchObject({ enforceDailyMinimum: true, updatedBy: 'admin' });
     expect(fake.documents.get('settings/Configurations/elements/trashPolicy')).toMatchObject({ autoDeleteDays: 7, updatedBy: 'admin' });
-    expect(fake.writes).toHaveLength(6);
+    expect(fake.documents.get('settings/Configurations/elements/loanSchedule')).toMatchObject({ skipSundays: true, updatedBy: 'admin', updatedAt: 'SERVER_TIMESTAMP' });
+    expect(fake.documents.get('settings/Configurations/elements/accountingPolicy')).toMatchObject({ paymentAllocation: 'principalFirst', expensesEnabled: false, updatedBy: 'admin' });
+    expect(fake.documents.get('settings/Configurations/elements/consolidationMetrics')).toMatchObject({ ...DEFAULT_SETTINGS.consolidationMetrics, updatedBy: 'admin' });
+    expect(fake.documents.get('settings/Configurations/elements/identifierPolicy')).toMatchObject({ resetWhenEmpty: false, updatedBy: 'admin' });
+    expect(fake.writes).toHaveLength(10);
+  });
+  it('round-trips the Sunday policy and initialization preserves the saved value', async () => {
+    let expected = structuredClone(DEFAULT_SETTINGS);
+    for (const skipSundays of [true, false, true]) {
+      const next = { ...expected, schedule: { skipSundays } };
+      await saveSettings(next, 'admin', expected);
+      await initializeSettings('admin');
+      const actual = mergeSettings({ schedule: fake.documents.get('settings/Configurations/elements/loanSchedule') });
+      expect(actual.schedule.skipSundays).toBe(skipSundays);
+      expected = next;
+    }
+    await expect(saveSettings(DEFAULT_SETTINGS, 'admin', DEFAULT_SETTINGS)).rejects.toThrow('another session');
   });
   it('rejects stale edits without overwriting another administrator’s settings', async () => {
     fake.documents.set('settings/Printables/elements/indexTemplate', { ...DEFAULT_SETTINGS.index, branch: 'Changed remotely' });
     await expect(saveSettings(DEFAULT_SETTINGS, 'admin', DEFAULT_SETTINGS)).rejects.toThrow('another session');
     expect(fake.writes).toHaveLength(0);
+  });
+  it('persists accounting choices and initialization preserves saved values', async () => {
+    const next = structuredClone(DEFAULT_SETTINGS);
+    next.accounting = { expensesEnabled: true, paymentAllocation: 'proportional' };
+    await saveSettings(next, 'admin', DEFAULT_SETTINGS);
+    const writes = fake.writes.length;
+    await initializeSettings('admin');
+    expect(fake.writes).toHaveLength(writes);
+    expect(mergeSettings({ accounting: fake.documents.get('settings/Configurations/elements/accountingPolicy') }).accounting).toEqual(next.accounting);
+    await expect(saveSettings(DEFAULT_SETTINGS, 'admin', DEFAULT_SETTINGS)).rejects.toThrow('another session');
   });
 });

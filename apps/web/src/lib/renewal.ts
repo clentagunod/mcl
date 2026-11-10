@@ -3,13 +3,14 @@ import { isISODate } from './dates';
 import { summarizeLoan } from './loan';
 import { round2 } from './money';
 import { isCurrentLoanPayment } from './loan-cycle';
+import { LOAN_TERMS } from '../config/app';
 
 export interface RenewalEligibility { eligible: boolean; reason: string; paidOn: string | null; dueDate: string; totalPaid: number }
 
 /** Missing calendar payments are allowed; a loan settled after its due date is not. */
-export function renewalEligibility(client: Client, payments: readonly Payment[], holidays: ReadonlySet<string>, today: string): RenewalEligibility {
+export function renewalEligibility(client: Client, payments: readonly Payment[], holidays: ReadonlySet<string>, today: string, skipSundays = false): RenewalEligibility {
   const receipts = payments.filter((p) => isCurrentLoanPayment(client, p));
-  const summary = summarizeLoan(client, receipts, holidays, today);
+  const summary = summarizeLoan(client, receipts, holidays, today, skipSundays);
   const result = { eligible: false, reason: '', paidOn: null as string | null, dueDate: summary.dueDate, totalPaid: summary.totalPaid };
   if (summary.totalPayable <= 0 || summary.outstanding > 0) return { ...result, reason: 'The current loan must be fully paid.' };
   if (receipts.some((p) => !Number.isFinite(p.amount) || p.amount <= 0 || !isISODate(p.paymentDate) || p.paymentDate < client.approvalDate || p.paymentDate > today)) {
@@ -36,7 +37,7 @@ export function validateRenewalTerms(value: unknown, today: string, paidOn: stri
     const n = v[key];
     if (typeof n !== 'number' || !Number.isFinite(n) || n < (key === 'interest' ? 0 : 0.01) || n > 999999999 || Math.abs(n * 100 - Math.round(n * 100)) > 0.00001) throw new Error(`Enter a valid ${key} with at most two decimal places.`);
   }
-  if (![45, 50, 58].includes(v.loanTermDays as number)) throw new Error('Choose a 45, 50 or 58 day loan.');
+  if (!(LOAN_TERMS as readonly unknown[]).includes(v.loanTermDays)) throw new Error(`Choose a supported loan term: ${LOAN_TERMS.join(', ')} days.`);
   if (!isISODate(v.approvalDate) || v.approvalDate < paidOn || v.approvalDate > today) throw new Error('Approval date must be on or after settlement and no later than today.');
   return { principal: v.principal as number, interest: v.interest as number, dailyAmount: v.dailyAmount as number, loanTermDays: v.loanTermDays as RenewalTerms['loanTermDays'], approvalDate: v.approvalDate };
 }

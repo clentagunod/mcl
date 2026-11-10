@@ -6,9 +6,10 @@ import { loanId } from '../lib/loan-cycle';
 import { clientFromDoc, paymentFromDoc } from './converters';
 import { readQueryDocuments, requireAdmin } from './firestore-admin';
 import { hasGoodRenewalHistory, renewalEligibility, validateRenewalTerms } from '../lib/renewal';
-import { formatSequence } from '../lib/identifiers';
+import { currentIdentifierReservation, formatSequence, identifierEpoch } from '../lib/identifiers';
 import { computeSchedule } from '../lib/loan';
 import { dailyPayable } from '../lib/printables';
+import { mergeSettings } from '../config/settings';
 
 export function subscribeRenewals(clientId: string, onData: (data: RenewalRecord[]) => void, onError: (error: Error) => void) {
   return subscribeToQuery(query(collection(db, 'clients', clientId, 'renewals'), orderBy('sequence', 'desc')), (doc) => {
@@ -29,13 +30,17 @@ export async function renewClient(client: Client, terms: RenewalTerms, notes: st
     if (loanId(current) !== loanId(client) || current.transactionNumber !== client.transactionNumber || current.revision !== client.revision) {
       throw new Error('The loan changed in another session. Close this form and try again.');
     }
+    // Track this policy in the transaction so a concurrent change retries the
+    // eligibility assessment and both archived due dates using the latest value.
+    const schedulePolicy = await transaction.get(doc(db, 'settings', 'Configurations', 'elements', 'loanSchedule'));
+    const { skipSundays } = mergeSettings({ schedule: schedulePolicy.data() }).schedule;
     const [receipts, holidays, history] = await Promise.all([
       readQueryDocuments(transaction, query(collection(db, 'payments'), where('clientId', '==', client.id))),
       readQueryDocuments(transaction, collection(db, 'holidays')),
       readQueryDocuments(transaction, collection(clientRef, 'renewals')),
     ]);
     const holidayDates = new Set(holidays.map(document => String(document.data()?.date || document.id)));
-    const assessment = renewalEligibility(current, receipts.map(document => paymentFromDoc(document)), holidayDates, today);
+    const assessment = renewalEligibility(current, receipts.map(document => paymentFromDoc(document)), holidayDates, today, skipSundays);
     if (!assessment.eligible || !assessment.paidOn) throw new Error(assessment.reason);
     if (history.length !== (current.renewalCount || 0) || !hasGoodRenewalHistory(history.map(document => document.data() as RenewalRecord))) {
       throw new Error('Renewal history must be complete and contain only loans settled on time.');
@@ -43,13 +48,14 @@ export async function renewClient(client: Client, terms: RenewalTerms, notes: st
     const validatedTerms = validateRenewalTerms(terms, today, assessment.paidOn);
     const counterRef = doc(db, 'settings', 'Configurations', 'elements', 'counters');
     const counters = await transaction.get(counterRef);
+    const epoch = identifierEpoch(counters.data());
     let sequence = Number(counters.data()?.transactionSequence || 0);
     let transactionNumber = '';
     for (let attempt = 0; attempt < 100; attempt += 1) {
       const candidate = formatSequence(++sequence, 5);
       const reservation = await transaction.get(doc(db, 'settings', 'Identifiers', 'transactions', candidate));
       const record = await transaction.get(doc(clientRef, 'renewals', candidate));
-      if (!reservation.exists() && !record.exists()) { transactionNumber = candidate; break; }
+      if (!currentIdentifierReservation(reservation.data(), epoch) && !record.exists()) { transactionNumber = candidate; break; }
     }
     if (!transactionNumber) throw new Error('Check the transaction allocation counter.');
     const previousLoan: Client = {
@@ -65,12 +71,12 @@ export async function renewClient(client: Client, terms: RenewalTerms, notes: st
     transaction.set(doc(clientRef, 'renewals', transactionNumber), {
       sequence: renewalCount, previousLoan, newLoan, totalPaid: assessment.totalPaid,
       paidOn: assessment.paidOn, dueDate: assessment.dueDate,
-      newDueDate: computeSchedule(validatedTerms.approvalDate, validatedTerms.loanTermDays, holidayDates, today).dueDate,
+      newDueDate: computeSchedule(validatedTerms.approvalDate, validatedTerms.loanTermDays, holidayDates, today, undefined, skipSundays).dueDate,
       approvedBy: actor.uid, approvedByName: actor.fullName, notes: notes.trim(), createdAt: serverTimestamp(),
     });
     transaction.update(clientRef, { ...validatedTerms, transactionNumber, activeLoanId: transactionNumber, renewalCount,
       originalTransactionNumber: previousLoan.originalTransactionNumber, updatedAt: serverTimestamp() });
     transaction.set(counterRef, { transactionSequence: sequence, updatedAt: serverTimestamp() }, { merge: true });
-    transaction.set(doc(db, 'settings', 'Identifiers', 'transactions', transactionNumber), { clientId: client.id, loanId: transactionNumber });
+    transaction.set(doc(db, 'settings', 'Identifiers', 'transactions', transactionNumber), { clientId: client.id, loanId: transactionNumber, ...(epoch ? { identifierEpoch: epoch } : {}) });
   });
 }

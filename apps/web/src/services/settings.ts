@@ -3,10 +3,14 @@ import { db } from '../config/firebase';
 import { DEFAULT_SETTINGS, mergeSettings, validateSettings, type AppSettings } from '../config/settings';
 
 const paths = {
+  identifiers: ['Configurations', 'identifierPolicy'],
+  consolidationMetrics: ['Configurations', 'consolidationMetrics'],
+  accounting: ['Configurations', 'accountingPolicy'],
   general: ['Configurations', 'general'], index: ['Printables', 'indexTemplate'],
   promissory: ['Printables', 'promissoryTemplate'], studio: ['Printables', 'studio'],
   payments: ['Configurations', 'paymentPolicy'],
   trash: ['Configurations', 'trashPolicy'],
+  schedule: ['Configurations', 'loanSchedule'],
 } as const;
 
 export function subscribeSettings(onData: (settings: AppSettings) => void, onError: (error: unknown) => void) {
@@ -15,7 +19,11 @@ export function subscribeSettings(onData: (settings: AppSettings) => void, onErr
   const failed = new Set<string>();
   const stops = ['Configurations', 'Printables'].map((component) => onSnapshot(
     collection(db, 'settings', component, 'elements'),
+    { includeMetadataChanges: true },
     (snapshot) => {
+      // Local feature-switch writes arrive before the server commits the policy.
+      // Do not start dependent subscriptions or enable writes from that preview.
+      if (snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites) return;
       for (const [key, [group, name]] of Object.entries(paths)) {
         if (group === component) raw[key] = snapshot.docs.find((d) => d.id === name)?.data();
       }

@@ -19,13 +19,15 @@ import { isCurrentLoanPayment, loanId } from '../../lib/loan-cycle';
 import { collection, doc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { restorePendingReceipt, type PendingReceipt } from '../../lib/pending-receipt';
+import { isAdminRole } from '../../lib/roles';
+import { EditPaymentModal } from './EditPaymentModal';
 
 interface PaymentsModalProps {
   clientId: string;
   onClose: () => void;
 }
 
-/** The payment history ("ledger") for one client, with add and delete for corrections. */
+/** The payment history ("ledger") for one client, with administrator corrections. */
 export function PaymentsModal({ clientId, onClose }: PaymentsModalProps) {
   const { rows, payments, today, loading: dataLoading, error: dataError } = useData();
   const { user, profile } = useAuth();
@@ -50,6 +52,7 @@ export function PaymentsModal({ clientId, onClose }: PaymentsModalProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [toDelete, setToDelete] = useState<Payment | null>(null);
+  const [toEdit, setToEdit] = useState<Payment | null>(null);
   const [requestedHistoryPage, setHistoryPage] = useState(0);
   const historyPage = Math.min(requestedHistoryPage, Math.max(0, Math.ceil(clientPayments.length / 25) - 1));
   const indexDays = useMemo(() => new Map(row ? indexEntries(row.client, clientPayments).map((entry) => [entry.date, entry.day]) : []), [row, clientPayments]);
@@ -205,7 +208,10 @@ export function PaymentsModal({ clientId, onClose }: PaymentsModalProps) {
                   <td>{payment.notes || settings.general.defaultPaymentNote}</td>
                   <td>{formatDateTime(payment.createdAt)}</td>
                   <td className="actions-col">
-                    <button type="button" className="btn btn-small btn-danger-outline" onClick={() => setToDelete(payment)}>
+                    {isAdminRole(profile?.role) && <button type="button" className="btn btn-small" disabled={busy || !!pending || !!restored.error || dataLoading || !!dataError || loanChanged || !payment.createdAt} onClick={() => setToEdit(payment)}>
+                      Edit
+                    </button>}
+                    <button type="button" className="btn btn-small btn-danger-outline" disabled={busy || !!pending || !!restored.error || dataLoading || !!dataError || loanChanged} onClick={() => setToDelete(payment)}>
                       Delete
                     </button>
                   </td>
@@ -221,6 +227,8 @@ export function PaymentsModal({ clientId, onClose }: PaymentsModalProps) {
         <span>Page {historyPage + 1} of {Math.ceil(clientPayments.length / 25)} · {clientPayments.length} receipts</span>
         <button className="btn btn-small" disabled={(historyPage + 1) * 25 >= clientPayments.length} onClick={() => setHistoryPage(historyPage + 1)}>Next receipts</button>
       </nav>}
+
+      {toEdit && <EditPaymentModal payment={toEdit} onClose={() => setToEdit(null)} />}
 
       {toDelete && (
         <ConfirmDialog

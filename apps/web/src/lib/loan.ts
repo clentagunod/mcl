@@ -7,9 +7,9 @@ import { isCurrentLoanPayment } from './loan-cycle';
 /** Safety stop so a bad holiday list can never cause an endless loop. */
 const MAX_SCAN_DAYS = 3660;
 
-/** A collection day is any day that is not a Sunday and not a holiday. */
-export function isCollectionDay(date: ISODate, holidays: ReadonlySet<ISODate>): boolean {
-  return !isSunday(date) && !holidays.has(date);
+/** Sundays count by default; configured holidays remain non-collection days. */
+export function isCollectionDay(date: ISODate, holidays: ReadonlySet<ISODate>, skipSundays = false): boolean {
+  return (!skipSundays || !isSunday(date)) && !holidays.has(date);
 }
 
 export interface LoanSchedule {
@@ -21,7 +21,7 @@ export interface LoanSchedule {
 
 /**
  * Walks the calendar from the approval date, counting only collection days
- * (skipping Sundays and holidays), until the loan term is reached.
+ * excluding holidays and, when configured, Sundays, until the term is reached.
  */
 export function computeSchedule(
   approvalDate: ISODate,
@@ -29,6 +29,7 @@ export function computeSchedule(
   holidays: ReadonlySet<ISODate>,
   today: ISODate,
   countApprovalDate: boolean = COUNT_APPROVAL_DATE_AS_DAY_ONE,
+  skipSundays = false,
 ): LoanSchedule {
   if (!isISODate(approvalDate) || !Number.isInteger(termDays) || termDays <= 0 || termDays > MAX_SCAN_DAYS) {
     throw new Error('Invalid loan approval date or term. An administrator must correct the loan details.');
@@ -39,7 +40,7 @@ export function computeSchedule(
 
   for (let scanned = 0; scanned < MAX_SCAN_DAYS; scanned += 1) {
     cursor = addDays(cursor, 1);
-    if (!isCollectionDay(cursor, holidays)) continue;
+    if (!isCollectionDay(cursor, holidays, skipSundays)) continue;
 
     counted += 1;
     // ISO dates compare correctly as plain strings.
@@ -75,6 +76,7 @@ export function summarizeLoan(
   clientPayments: readonly Payment[],
   holidays: ReadonlySet<ISODate>,
   today: ISODate,
+  skipSundays = false,
 ): LoanSummary {
   clientPayments = clientPayments.filter((payment) => isCurrentLoanPayment(client, payment));
   const totalPayable = round2(client.principal + client.interest);
@@ -85,6 +87,8 @@ export function summarizeLoan(
     client.loanTermDays,
     holidays,
     today,
+    COUNT_APPROVAL_DATE_AS_DAY_ONE,
+    skipSundays,
   );
 
   const lastPaymentDate = clientPayments.reduce<ISODate | null>(
@@ -123,11 +127,12 @@ export function buildClientRows(
   payments: readonly Payment[],
   holidays: ReadonlySet<ISODate>,
   today: ISODate,
+  skipSundays = false,
 ): ClientRow[] {
   const paymentsByClient = groupPaymentsByClient(payments);
   return clients.map((client) => ({
     client,
-    summary: summarizeLoan(client, paymentsByClient.get(client.id) ?? [], holidays, today),
+    summary: summarizeLoan(client, paymentsByClient.get(client.id) ?? [], holidays, today, skipSundays),
   }));
 }
 

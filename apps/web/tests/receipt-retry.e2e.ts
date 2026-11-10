@@ -9,6 +9,7 @@ test('Firestore receipt retries keep the reserved ID and payload after an uncert
       if (!response.ok) throw new Error('Connection interrupted');
     }
     export async function deletePayment() { throw new Error('Not used in this fixture'); }
+    export async function updatePayment() { throw new Error('Not used in this fixture'); }
   ` }));
   await page.route('**/test-api/payment', async route => {
     if (route.request().method() === 'OPTIONS') {

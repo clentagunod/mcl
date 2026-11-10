@@ -9,7 +9,8 @@ import type { Client, ClientInput } from '../types';
 import { clientFromDoc } from './converters';
 import { subscribeToQuery, type Subscribe } from './subscribe';
 import { DEFAULT_SETTINGS, mergeSettings } from '../config/settings';
-import { formatSequence } from '../lib/identifiers';
+import { currentIdentifierReservation, formatSequence, identifierEpoch } from '../lib/identifiers';
+import { canResetIdentifiers } from './identifier-reset';
 import { dailyPayable } from '../lib/printables';
 import { loanId } from '../lib/loan-cycle';
 
@@ -36,8 +37,10 @@ async function allocateClient(input?: ClientInput, existingId?: string): Promise
     const counterRef = doc(db, 'settings', 'Configurations', 'elements', 'counters');
     const counter = await transaction.get(counterRef);
     const counters = counter.data() ?? {};
-    let clientSequence = Number(counters.clientSequence ?? 0);
-    let transactionSequence = Number(counters.transactionSequence ?? 0);
+    const reset = !existingRef && await canResetIdentifiers(transaction);
+    const epoch = reset ? crypto.randomUUID() : identifierEpoch(counters);
+    let clientSequence = reset ? 0 : Number(counters.clientSequence ?? 0);
+    let transactionSequence = reset ? 0 : Number(counters.transactionSequence ?? 0);
     let clientNumber = typeof data?.clientNumber === 'string' ? data.clientNumber : '';
     let transactionNumber = typeof data?.transactionNumber === 'string' ? data.transactionNumber : '';
     // Skip occupied names, including manually imported IDs, without replacing records.
@@ -45,28 +48,31 @@ async function allocateClient(input?: ClientInput, existingId?: string): Promise
       const candidate = formatSequence(++clientSequence, general.clientIdDigits, general.clientIdPrefix);
       const reservation = await transaction.get(doc(db, 'settings', 'Identifiers', 'clients', candidate));
       const client = await transaction.get(doc(clientsCollection, candidate));
-      if (!reservation.exists() && (!client.exists() || candidate === existingId)) clientNumber = candidate;
+      if (!currentIdentifierReservation(reservation.data(), epoch) && (!client.exists() || candidate === existingId)) clientNumber = candidate;
     }
     for (let attempts = 0; !transactionNumber && attempts < 100; attempts += 1) {
       const candidate = formatSequence(++transactionSequence, 5);
       const reservation = await transaction.get(doc(db, 'settings', 'Identifiers', 'transactions', candidate));
-      if (!reservation.exists()) transactionNumber = candidate;
+      if (!currentIdentifierReservation(reservation.data(), epoch)) transactionNumber = candidate;
     }
     if (!clientNumber || !transactionNumber) throw new Error('Too many occupied identifiers. Contact an administrator to check the allocation counters.');
     if (!/^\d{5}$/.test(transactionNumber)) throw new Error('An existing transaction number is invalid. It must contain exactly five digits.');
     if (data?.clientNumber) {
       const reservation = await transaction.get(doc(db, 'settings', 'Identifiers', 'clients', clientNumber));
-      if (reservation.exists() && reservation.data().clientId !== existingId) throw new Error(`Client number ${clientNumber} is already reserved for another client.`);
+      if (currentIdentifierReservation(reservation.data(), epoch) && reservation.data()!.clientId !== existingId) throw new Error(`Client number ${clientNumber} is already reserved for another client.`);
     }
     if (data?.transactionNumber) {
       const reservation = await transaction.get(doc(db, 'settings', 'Identifiers', 'transactions', transactionNumber));
-      if (reservation.exists() && reservation.data().clientId !== existingId) throw new Error(`Transaction ${transactionNumber} is already reserved for another client.`);
+      if (currentIdentifierReservation(reservation.data(), epoch) && reservation.data()!.clientId !== existingId) throw new Error(`Transaction ${transactionNumber} is already reserved for another client.`);
     }
-    const ref = existingRef ?? doc(clientsCollection, clientNumber);
+    // Public numbers can restart; an internal client ID must never be reused or
+    // old expenses, audit records and stale collector forms could change owner.
+    const ref = existingRef ?? (epoch ? doc(clientsCollection) : doc(clientsCollection, clientNumber));
+    const epochFields = epoch ? { identifierEpoch: epoch } : {};
     // All reads above precede writes, as required by Firestore transactions.
-    transaction.set(counterRef, { clientSequence, transactionSequence, updatedAt: serverTimestamp() });
-    transaction.set(doc(db, 'settings', 'Identifiers', 'clients', clientNumber), { clientId: ref.id });
-    transaction.set(doc(db, 'settings', 'Identifiers', 'transactions', transactionNumber), { clientId: ref.id });
+    transaction.set(counterRef, { clientSequence, transactionSequence, ...epochFields, updatedAt: serverTimestamp() }, { merge: true });
+    transaction.set(doc(db, 'settings', 'Identifiers', 'clients', clientNumber), { clientId: ref.id, ...epochFields });
+    transaction.set(doc(db, 'settings', 'Identifiers', 'transactions', transactionNumber), { clientId: ref.id, ...epochFields });
     if (existingRef && data) {
       transaction.update(existingRef, {
         clientNumber, transactionNumber,

@@ -5,10 +5,11 @@ import { isCurrentLoanPayment } from './loan-cycle';
 import { summarizeLoan } from './loan';
 import { indexEntries, dailySummary } from './printables';
 import { buildConsolidation } from './consolidation';
+import { LOAN_TERMS } from '../config/app';
 
 const client: Client = { id: 'mcl0001', firstName: 'Juan', middleName: '', lastName: 'Cruz', address: 'San Miguel', cellphone: '09170000000', principal: 10000, interest: 1250, dailyAmount: 250, loanTermDays: 45, approvalDate: '2026-09-01', transactionNumber: '00001' };
 const receipt = (amount = 11250, paymentDate = '2026-10-23', loanId?: string): Payment => ({ id: 'receipt', clientId: client.id, amount, paymentDate, collectorId: 'admin', collectorName: 'Admin', createdAt: null, ...(loanId ? { loanId } : {}) });
-const assess = (payments: Payment[]) => renewalEligibility(client, payments, new Set(), '2026-11-02');
+const assess = (payments: Payment[]) => renewalEligibility(client, payments, new Set(), '2026-11-02', true);
 
 describe('renewal eligibility', () => {
   it('requires complete settlement including interest', () => {
@@ -31,7 +32,16 @@ describe('renewal eligibility', () => {
     for (const date of ['bad', '2026-08-30', '2026-11-03']) expect(assess([receipt(11250, date)]).eligible).toBe(false);
   });
   it('uses the holiday-aware loan schedule', () => {
-    expect(renewalEligibility(client, [receipt(11250, '2026-10-24')], new Set(['2026-09-02']), '2026-11-02').eligible).toBe(true);
+    expect(renewalEligibility(client, [receipt(11250, '2026-10-24')], new Set(['2026-09-02']), '2026-11-02', true).eligible).toBe(true);
+  });
+  it('uses calendar days by default and applies the configured Sunday policy to eligibility', () => {
+    const payments = [receipt(11250, '2026-10-20')];
+    const calendar = renewalEligibility(client, payments, new Set(), '2026-11-02');
+    const explicitOff = renewalEligibility(client, payments, new Set(), '2026-11-02', false);
+    const skipSundays = renewalEligibility(client, payments, new Set(), '2026-11-02', true);
+    expect(calendar).toEqual(explicitOff);
+    expect(calendar).toMatchObject({ dueDate: '2026-10-16', eligible: false });
+    expect(skipSundays).toMatchObject({ dueDate: '2026-10-23', eligible: true });
   });
   it('blocks a late or incomplete previous history', () => {
     expect(hasGoodRenewalHistory([{ paidOn: '2026-10-24', dueDate: '2026-10-23' } as RenewalRecord])).toBe(false);
@@ -49,7 +59,7 @@ describe('separate loan cycles', () => {
   });
   it('resets index day numbering and consolidation for the new loan', () => {
     expect(indexEntries(renewed, payments)).toEqual([{ day: 1, date: '2026-11-02', amount: 100 }]);
-    expect(buildConsolidation([renewed], payments)[0]).toMatchObject({ totalPayment: 100, principal: 5000, balance: 4900 });
+    expect(buildConsolidation([renewed], payments)[0]).toMatchObject({ totalPayment: 100, principal: 5000, payableAmount: 5500, balance: 5400 });
   });
   it('retains actual daily collections across both cycles in the daily summary', () => {
     expect(dailySummary([renewed], payments, '2026-11-02', 'Daily Payment')[0].amount).toBe(11350);
@@ -64,9 +74,9 @@ describe('separate loan cycles', () => {
 describe('new renewal terms', () => {
   const terms = { principal: 10000, interest: 1250, dailyAmount: 250, loanTermDays: 45, approvalDate: '2026-11-02' };
   it('accepts valid new terms for all supported durations', () => {
-    for (const loanTermDays of [45, 50, 58]) expect(validateRenewalTerms({ ...terms, loanTermDays }, '2026-11-02', '2026-10-23').loanTermDays).toBe(loanTermDays);
+    for (const loanTermDays of LOAN_TERMS) expect(validateRenewalTerms({ ...terms, loanTermDays }, '2026-11-02', '2026-10-23').loanTermDays).toBe(loanTermDays);
   });
   it('rejects blank, nonfinite, negative, fractional-cent and unsupported values', () => {
-    for (const patch of [{ principal: 0 }, { interest: -1 }, { interest: Infinity }, { dailyAmount: 0 }, { principal: 1.001 }, { loanTermDays: 30 }, { approvalDate: '2026-11-03' }, { approvalDate: '2026-10-01' }, { approvalDate: '2026-02-30' }]) expect(() => validateRenewalTerms({ ...terms, ...patch }, '2026-11-02', '2026-10-23')).toThrow();
+    for (const patch of [{ principal: 0 }, { interest: -1 }, { interest: Infinity }, { dailyAmount: 0 }, { principal: 1.001 }, { loanTermDays: 31 }, { approvalDate: '2026-11-03' }, { approvalDate: '2026-10-01' }, { approvalDate: '2026-02-30' }]) expect(() => validateRenewalTerms({ ...terms, ...patch }, '2026-11-02', '2026-10-23')).toThrow();
   });
 });

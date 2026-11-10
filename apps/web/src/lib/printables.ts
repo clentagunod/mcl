@@ -117,7 +117,7 @@ export function promissoryValues(client: Client, settings: AppSettings): Record<
     total: money(round2(client.principal + client.interest)), term: String(client.loanTermDays),
     interestStatement: settings.promissory.interestStatement, dailyAmount: money(dailyPayable(client)),
     day: String(day), ordinal, monthYear: `${month}, ${date.getUTCFullYear()}`,
-    executionPlace: settings.promissory.executionPlace, cellphone: client.cellphone,
+    executionPlace: settings.promissory.executionPlace, cellphone: client.cellphone || 'N/A',
     clientNumber: publicClientId(client), transactionNumber: client.transactionNumber ?? 'Pending',
   };
 }

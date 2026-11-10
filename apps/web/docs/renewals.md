@@ -1,6 +1,8 @@
 # Loan renewal
 
-All implementation and deployment files live in `apps/web`. Android is unchanged.
+The renewal service and deployment files live in `apps/web`; the hybrid Android
+administrator workspace imports that shared service. Native Android variants have
+separate renewal implementations.
 
 ## Admin workflow
 
@@ -9,13 +11,14 @@ Good history means each completed loan was fully settled on or before its due da
 A paid loan with late settlement shows a disabled Renew button with the reason.
 A pending or overdue unpaid loan has no Renew action.
 
-The due date uses the existing collection calendar, skipping Sundays and configured
-holidays. Missing an individual payment date does not itself disqualify a borrower;
+The due date uses the configured collection calendar. Sundays count by default;
+Settings → Configurations → Loan schedule can enable Sunday skipping. Configured
+holidays are always excluded. Missing an individual payment date does not itself disqualify a borrower;
 principal plus interest must be paid by the final due date. Eligibility uses the
 actual date accumulated receipts first reached full settlement. Invalid, future-dated
 or pre-approval receipts block renewal. Prior renewals must also have settled on time.
 
-The admin enters the new principal, fixed interest, term (45/50/58), daily payable,
+The admin enters the new principal, fixed interest, term (30/45/50/58), daily payable,
 approval date and optional notes, then explicitly approves the terms. Approval defaults
 to today and must fall between previous settlement and today. The service uses the
 Philippines calendar date. No automatic granting occurs. A new schedule and balance
@@ -37,7 +40,7 @@ the current loan does not rewrite any historical snapshot.
 
 `src/services/renewals.ts` performs renewal directly using the Firestore browser SDK.
 Each transaction rechecks the active admin/developer profile and reads the current
-client, receipts, holidays, previous renewals, and identifier counter. It validates
+client, receipts, holidays, current loan-schedule policy, previous renewals, and identifier counter. It validates
 eligibility again. Stale loan IDs, transaction numbers, revisions, and duplicate approvals
 are rejected. The new loan, immutable event, counter, and reservation commit together.
 
@@ -49,6 +52,13 @@ The service queries the server and tracks every returned document in the transac
 so edits/deletions trigger retries. The browser SDK cannot lock a query against new
 matching receipts from another device. Avoid concurrent corrections/collections while
 approving renewal. See [Firebase transactions](https://firebase.google.com/docs/firestore/manage-data/transactions).
+
+The schedule preference is read inside the transaction, including automatic retries,
+so current eligibility and the new archived due date use the same saved policy.
+Changing the preference recalculates active loans; it never rewrites immutable
+renewal snapshots. The matching optional Cloud Function also reads this preference.
+Publish the updated rules before granting 30-day renewals or enabling collector
+reads of `settings/Configurations/elements/loanSchedule`.
 
 | Location / field | Meaning |
 | --- | --- |

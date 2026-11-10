@@ -1,7 +1,41 @@
 import { describe, expect, it } from 'vitest';
 import { parseMoney, validateAccountForm, validateClientForm, validatePaymentForm } from './validation';
 import { MAX_MONEY } from './money';
+import { LOAN_TERMS } from '../config/app';
 const values = { lastName: 'Cruz', firstName: 'Juan', middleName: '', address: 'Test', cellphone: '09170000000', principal: '1000', interest: '100', loanTermDays: '45', approvalDate: '2026-11-01', dailyAmount: '25' };
+
+describe('supported client loan terms', () => {
+  it.each(LOAN_TERMS)('accepts a %s-day loan without altering its term', (loanTermDays) => {
+    const result = validateClientForm({ ...values, loanTermDays: String(loanTermDays) });
+    expect(result.ok && result.value.loanTermDays).toBe(loanTermDays);
+  });
+
+  it('calculates the suggested daily amount for a 30-day loan', () => {
+    const result = validateClientForm({ ...values, principal: '10000', interest: '1250', loanTermDays: '30', dailyAmount: undefined });
+    expect(result.ok && result.value.dailyAmount).toBe(375);
+  });
+
+  it.each(['', '0', '29', '31', '60', 'NaN'])('rejects unsupported duration %j', (loanTermDays) => {
+    expect(validateClientForm({ ...values, loanTermDays })).toMatchObject({ ok: false, errors: { loanTermDays: expect.any(String) } });
+  });
+});
+
+describe('optional client cellphone', () => {
+  it.each(['', '  ', 'N/A', ' n/a ', 'N / A'])('stores unavailable number %j as an empty string', (cellphone) => {
+    const result = validateClientForm({ ...values, cellphone });
+    expect(result.ok && result.value.cellphone).toBe('');
+  });
+
+  it.each(['0917 123-4567', '+63 (917) 123-4567'])('continues normalizing a supplied number %s', (cellphone) => {
+    const result = validateClientForm({ ...values, cellphone });
+    expect(result.ok && result.value.cellphone).toBe(cellphone.startsWith('+') ? '+639171234567' : '09171234567');
+  });
+
+  it.each(['123', 'not available', '091712345678', 'N/A0917'])('rejects invalid supplied number %s', (cellphone) => {
+    expect(validateClientForm({ ...values, cellphone })).toMatchObject({ ok: false, errors: { cellphone: expect.any(String) } });
+  });
+});
+
 describe('finite financial input boundaries', () => {
   it.each(['1e308', 'Infinity', 'NaN', String(MAX_MONEY + 1), '-1'])('rejects unsupported amount %s', value => {
     expect(parseMoney(value)).toBeNull();

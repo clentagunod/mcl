@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { FormField } from '../../components/FormField';
 import { Modal } from '../../components/Modal';
-import { LOAN_TERMS } from '../../config/app';
+import { DEFAULT_LOAN_TERM_DAYS, LOAN_TERMS } from '../../config/app';
 import { useData } from '../../context/DataContext';
 import { describeError } from '../../lib/errors';
 import { formatPeso, parseMoneyOrZero } from '../../lib/money';
@@ -33,7 +33,7 @@ export function ClientFormModal({ client, onClose }: ClientFormModalProps) {
     cellphone: client?.cellphone ?? '',
     principal: client ? String(client.principal) : '',
     interest: client ? String(client.interest) : '',
-    loanTermDays: client ? String(client.loanTermDays) : String(LOAN_TERMS[0]),
+    loanTermDays: client ? String(client.loanTermDays) : String(DEFAULT_LOAN_TERM_DAYS),
     approvalDate: client?.approvalDate ?? today,
     dailyAmount: client ? String(dailyPayable(client)) : '',
   }));
@@ -91,8 +91,8 @@ export function ClientFormModal({ client, onClose }: ClientFormModalProps) {
             <FormField label="Middle name (optional)" error={errors.middleName}>
               <input type="text" autoComplete="off" {...bind('middleName')} />
             </FormField>
-            <FormField label="Cellphone number" error={errors.cellphone}>
-              <input type="tel" inputMode="tel" autoComplete="off" placeholder="09171234567" {...bind('cellphone')} />
+            <FormField label="Cellphone number (optional)" error={errors.cellphone} hint="Leave blank or enter N/A if unavailable.">
+              <input type="tel" autoComplete="off" placeholder="09171234567 or N/A" {...bind('cellphone')} />
             </FormField>
           </div>
           <FormField label="Permanent address" error={errors.address}>

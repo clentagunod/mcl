@@ -63,8 +63,11 @@ export function validateClientForm(values: ClientFormValues): ValidationResult<C
   if (!firstName) errors.firstName = 'First name is required.';
   if (!address) errors.address = 'Permanent address is required.';
 
-  const cellphone = normalizeCellphone(values.cellphone);
-  if (!cellphone) errors.cellphone = 'Enter a valid mobile number, e.g. 09171234567.';
+  // Keep the shared cellphone field a string; an empty value means unavailable.
+  const cellphoneInput = values.cellphone.trim();
+  const cellphone = cellphoneInput === '' || /^n\s*\/\s*a$/i.test(cellphoneInput)
+    ? '' : normalizeCellphone(cellphoneInput);
+  if (cellphone === null) errors.cellphone = 'Enter a valid mobile number, leave blank, or enter N/A.';
 
   const principal = parseMoney(values.principal);
   if (principal === null || principal <= 0) errors.principal = 'Principal must be greater than 0.';
