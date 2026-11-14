@@ -8,7 +8,28 @@ export type ManagedUserRole = 'admin' | 'collector';
 /** Developer profiles are provisioned manually and have administrator access. */
 export type UserRole = ManagedUserRole | 'developer';
 
-export interface Client {
+/** Optional identity fields shared by the borrower and co-maker. Dates use YYYY-MM-DD. */
+export interface IdentificationDetails {
+  /** Full display label, including the specified text for a custom ID. */
+  validIdType?: string;
+  validIdNumber?: string;
+  validIdIssuedOn?: ISODate;
+  validIdIssuedAt?: string;
+}
+
+export interface CoMakerDetails extends IdentificationDetails {
+  name: string;
+  contactNumber: string;
+}
+
+/** Per-client overrides; blank or missing values use the shared template settings. */
+export interface PromissoryNoteDetails {
+  payee?: string;
+  interestStatement?: string;
+  executionPlace?: string;
+}
+
+export interface Client extends IdentificationDetails {
   id: string;
   /** Absent on the original loan; each renewal starts a separate ledger cycle. */
   activeLoanId?: string;
@@ -26,6 +47,8 @@ export interface Client {
   middleName: string;
   address: string;
   cellphone: string;
+  coMaker?: CoMakerDetails;
+  promissoryNote?: PromissoryNoteDetails;
   /** Amount lent, in pesos. */
   principal: number;
   /** Fixed interest amount in pesos (NOT a percentage). */

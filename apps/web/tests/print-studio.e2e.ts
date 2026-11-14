@@ -41,10 +41,12 @@ test('index template, sequential paying days, all terms and reset controls', asy
   await page.getByRole('radio', { name: /Select .*\(mcl0003\)/ }).check();
   await expect(frame.locator('.index-entry')).toHaveCount(58);
   await expect(page.getByRole('button', { name: 'Print', exact: true })).toBeEnabled();
-  await page.getByLabel('Size grid').uncheck();
-  await expect(page.locator('.studio-workspace')).not.toHaveClass(/with-grid/);
+  await page.getByRole('tab', { name: 'View', exact: true }).click();
+  await page.getByLabel('Size grid').check();
+  await expect(page.locator('.studio-workspace')).toHaveClass(/with-grid/);
+  await page.getByRole('tab', { name: 'Home', exact: true }).click();
   await page.getByRole('button', { name: 'Reset print options' }).click();
-  await expect(page.getByLabel('Size grid')).toBeChecked();
+  await expect(page.locator('.studio-workspace')).not.toHaveClass(/with-grid/);
   const pending = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export DOCX', exact: true }).click();
   const download = await pending;
@@ -128,7 +130,7 @@ test('promissory preview and real DOCX retain template fields and blank IDs', as
 });
 
 test('summary paginates all clients, shows total once, and exports Word and standalone HTML', async ({ page }) => {
-  await page.goto('/tests/fixtures/print-studio.html?many=1');
+  await page.goto('/tests/fixtures/print-studio.html?many=1&summaryall=1');
   await page.getByRole('tab', { name: 'Daily Summary Sheet' }).click();
   const frame = page.frameLocator('iframe');
   await expect(frame.locator('.summary-table tbody tr')).toHaveCount(65);
@@ -230,7 +232,7 @@ test('smart search and checked bulk selections persist across documents and expo
 });
 
 test('daily summary supports searched subsets and labels the selected-client grand total', async ({ page }) => {
-  await page.goto('/tests/fixtures/print-studio.html');
+  await page.goto('/tests/fixtures/print-studio.html?summaryall=1');
   await page.getByRole('tab', { name: 'Daily Summary Sheet' }).click();
   await page.getByRole('button', { name: 'Clear selection' }).click();
   const search = page.getByRole('searchbox', { name: 'Search clients' });

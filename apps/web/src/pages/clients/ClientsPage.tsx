@@ -184,7 +184,7 @@ export default function ClientsPage() {
                         const eligibility = renewalEligibility(client, payments, holidayDates, today, settings.schedule.skipSundays);
                         return <button type="button" className="btn btn-small btn-primary" disabled={!eligibility.eligible || !!error || !client.transactionNumber} title={eligibility.reason} onClick={() => setModal({ type: 'renew', clientId: client.id })}>Renew</button>;
                       })()}{' '}
-                      <Link className="btn btn-small" to={`/printables?client=${encodeURIComponent(client.id)}`} title="Prepare this client's documents"><Icon name="print" size={13} />Print</Link>{' '}
+                      <Link className="btn btn-small" to={`/print-studio?client=${encodeURIComponent(client.id)}`} target="_blank" rel="noopener noreferrer" title="Open this client's documents in a separate printing tab"><Icon name="print" size={13} />Print</Link>{' '}
                       <button type="button" className="btn btn-small" onClick={() => setModal({ type: 'payments', clientId: client.id })}>
                         <Icon name="wallet" size={13} />Payments
                       </button>{' '}

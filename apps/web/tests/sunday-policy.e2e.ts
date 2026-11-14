@@ -28,6 +28,8 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/src/services/clients.ts', route => route.fulfill({ contentType: 'text/javascript', body: `
     export function subscribeClients(onData) { onData([{ id: 'fixture-client', clientNumber: 'mcl0001', transactionNumber: '00001', firstName: 'Juan', middleName: '', lastName: 'Cruz', address: 'Tagum', cellphone: '', principal: 10000, interest: 1250, dailyAmount: 375, loanTermDays: 30, approvalDate: '2026-10-01' }]); return () => {}; }
     export async function completeClientRecords() {}
+    export async function addClient() { throw new Error('Not used by the Sunday-policy fixture'); }
+    export async function updateClient() { throw new Error('Not used by the Sunday-policy fixture'); }
   ` }));
   await page.route('**/src/services/payments.ts', route => route.fulfill({ contentType: 'text/javascript', body: 'export function subscribePayments(onData) { onData([]); return () => {}; }' }));
   await page.route('**/src/services/collectors.ts', route => route.fulfill({ contentType: 'text/javascript', body: 'export function subscribeCollectors(onData) { onData([]); return () => {}; }' }));
@@ -41,7 +43,7 @@ test('saving and reloading Sunday policy updates the real providers, loan status
     await route.fulfill({ contentType: 'application/json', body: '{}' });
   });
   await page.goto('/tests/fixtures/sunday-policy.html#settings-schedule');
-  const toggle = page.getByRole('checkbox', { name: 'Skip Sundays when counting loan days', exact: true });
+  const toggle = page.getByRole('switch', { name: 'Skip Sundays when counting loan days', exact: true });
   await expect(toggle).not.toBeChecked();
   await expect(page.getByLabel('Loan due date', { exact: true })).toHaveText('2026-11-01');
   await expect(page.getByLabel('Loan status', { exact: true })).toHaveText('due');
@@ -72,7 +74,7 @@ test('saving and reloading Sunday policy updates the real providers, loan status
 test('failed saves preserve the active schedule and remote changes cannot be overwritten by an old draft', async ({ page }) => {
   await page.route('**/test-api/sunday-settings', route => route.fulfill({ status: 503, body: '{}' }));
   await page.goto('/tests/fixtures/sunday-policy.html#settings-schedule');
-  const toggle = page.getByRole('checkbox', { name: 'Skip Sundays when counting loan days', exact: true });
+  const toggle = page.getByRole('switch', { name: 'Skip Sundays when counting loan days', exact: true });
   await toggle.check();
   await page.getByRole('button', { name: 'Save settings', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Schedule save unavailable');

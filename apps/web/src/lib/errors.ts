@@ -11,19 +11,26 @@ const MESSAGES: Record<string, string> = {
   'auth/email-already-in-use': 'An account with that email already exists.',
   'auth/weak-password': 'That password is too weak. Use a longer one.',
   'auth/operation-not-allowed':
-    'Email/Password sign-in is not enabled. Turn it on in Firebase Console -> Authentication -> Sign-in method.',
+    'Sign-in is currently unavailable. Please contact your administrator.',
   'permission-denied':
-    'Firestore denied this operation. Active admin and developer accounts are supported. Check that the current shared rules are published to the same Firebase project used by this app.',
+    'You do not have permission to complete this action. Please contact your administrator.',
   unavailable: 'Cannot reach the server right now. Check your internet connection.',
 };
 
 /** Turns any thrown value into a message that is safe and useful to show to the admin. */
 export function describeError(error: unknown): string {
   if (error instanceof FirebaseError) {
-    if (['functions/failed-precondition', 'functions/invalid-argument', 'functions/permission-denied', 'functions/resource-exhausted', 'functions/not-found'].includes(error.code)) return error.message;
+    if (['functions/failed-precondition', 'functions/invalid-argument', 'functions/permission-denied', 'functions/resource-exhausted', 'functions/not-found'].includes(error.code)) return userMessage(error.message);
     if (error.code.startsWith('functions/')) return 'The server could not confirm this action. Check your connection and retry. If this continues, contact an administrator.';
     return MESSAGES[error.code] ?? `Something went wrong (${error.code}).`;
   }
-  if (error instanceof Error) return error.message;
+  if (error instanceof Error) return userMessage(error.message);
   return 'Something went wrong. Please try again.';
+}
+
+/** Keep infrastructure diagnostics out of user-facing notifications. */
+function userMessage(message: string): string {
+  return /firebase|firestore/i.test(message)
+    ? 'This action could not be completed. Please try again or contact your administrator.'
+    : message;
 }

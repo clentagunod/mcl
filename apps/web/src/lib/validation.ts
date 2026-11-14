@@ -3,6 +3,7 @@ import type { AccountInput, ClientInput, LoanTermDays } from '../types';
 import { isISODate } from './dates';
 import { isMoney, round2 } from './money';
 import { isManagedRole } from './roles';
+import { VALID_ID_TYPES, type ClientIdentityFormValues } from './client-identity';
 
 export type FieldErrors<T> = Partial<Record<keyof T, string>>;
 
@@ -38,7 +39,7 @@ function isLoanTerm(value: number): value is LoanTermDays {
 
 // ---- Client form -------------------------------------------------------------
 
-export interface ClientFormValues {
+export interface ClientFormValues extends ClientIdentityFormValues {
   lastName: string;
   firstName: string;
   middleName: string;
@@ -49,6 +50,9 @@ export interface ClientFormValues {
   loanTermDays: string;
   approvalDate: string;
   dailyAmount?: string;
+  notePayee?: string;
+  noteInterestStatement?: string;
+  noteExecutionPlace?: string;
 }
 
 export function validateClientForm(values: ClientFormValues): ValidationResult<ClientFormValues, ClientInput> {
@@ -68,6 +72,49 @@ export function validateClientForm(values: ClientFormValues): ValidationResult<C
   const cellphone = cellphoneInput === '' || /^n\s*\/\s*a$/i.test(cellphoneInput)
     ? '' : normalizeCellphone(cellphoneInput);
   if (cellphone === null) errors.cellphone = 'Enter a valid mobile number, leave blank, or enter N/A.';
+
+  function optionalText(field: keyof ClientFormValues, max: number): string {
+    const value = cleanText(values[field] ?? '');
+    if (value.length > max) errors[field] = `Use at most ${max} characters.`;
+    return value;
+  }
+  function idType(field: 'validIdType' | 'coMakerValidIdType', custom: 'customValidIdType' | 'coMakerCustomValidIdType'): string {
+    const selected = values[field] ?? '';
+    if (selected === 'custom') {
+      const specified = optionalText(custom, 200);
+      if (!specified) errors[custom] = 'Specify the custom ID type.';
+      return specified;
+    }
+    if (selected && !(VALID_ID_TYPES as readonly string[]).includes(selected)) errors[field] = 'Choose an ID type or select Custom.';
+    return selected;
+  }
+  function issuedOn(field: 'validIdIssuedOn' | 'coMakerValidIdIssuedOn'): string {
+    const value = (values[field] ?? '').trim();
+    if (value && !isISODate(value)) errors[field] = 'Enter a valid issue date.';
+    return value;
+  }
+  const identity = {
+    validIdType: idType('validIdType', 'customValidIdType'),
+    validIdNumber: optionalText('validIdNumber', 200),
+    validIdIssuedOn: issuedOn('validIdIssuedOn'),
+    validIdIssuedAt: optionalText('validIdIssuedAt', 300),
+  };
+  const contactInput = (values.coMakerContactNumber ?? '').trim();
+  const contactNumber = !contactInput || /^n\s*\/\s*a$/i.test(contactInput) ? '' : normalizeCellphone(contactInput);
+  if (contactNumber === null) errors.coMakerContactNumber = 'Enter a valid mobile number, leave blank, or enter N/A.';
+  const coMaker = {
+    name: optionalText('coMakerName', 200),
+    validIdType: idType('coMakerValidIdType', 'coMakerCustomValidIdType'),
+    validIdNumber: optionalText('coMakerValidIdNumber', 200),
+    validIdIssuedOn: issuedOn('coMakerValidIdIssuedOn'),
+    validIdIssuedAt: optionalText('coMakerValidIdIssuedAt', 300),
+    contactNumber: contactNumber ?? '',
+  };
+  const noteFields = {
+    payee: optionalText('notePayee', 1500),
+    interestStatement: optionalText('noteInterestStatement', 1500),
+    executionPlace: optionalText('noteExecutionPlace', 1500),
+  };
 
   const principal = parseMoney(values.principal);
   if (principal === null || principal <= 0) errors.principal = 'Principal must be greater than 0.';
@@ -100,6 +147,11 @@ export function validateClientForm(values: ClientFormValues): ValidationResult<C
       middleName,
       address,
       cellphone,
+      ...identity,
+      coMaker,
+      // Ordinary client edits preserve note overrides through the partial update.
+      ...(values.notePayee !== undefined || values.noteInterestStatement !== undefined || values.noteExecutionPlace !== undefined
+        ? { promissoryNote: noteFields } : {}),
       principal,
       interest,
       loanTermDays,

@@ -69,7 +69,78 @@ async function services(uid = 'admin') {
   };
 }
 
+describe('client identification through production Firestore services', () => {
+  const details = {
+    validIdType: 'Philippine Passport', validIdNumber: '000123', validIdIssuedOn: '2024-02-29', validIdIssuedAt: 'Davao',
+    coMaker: { name: 'Maria Reyes', validIdType: 'Company ID', validIdNumber: '000009', validIdIssuedOn: '2023-01-01', validIdIssuedAt: 'Tagum', contactNumber: '09171234567' },
+    promissoryNote: { payee: 'MCL Lending', interestStatement: 'Agreed charge', executionPlace: 'Tagum City' },
+  };
+
+  it.each(['admin', 'developer'])('%s persists, reloads and clears borrower, co-maker and note fields', async uid => {
+    const service = await services(uid);
+    await service.addClient({ ...client, ...details, loanTermDays: 45 });
+    expect((await getDoc(doc(service.db, 'clients/mcl0002'))).data()).toMatchObject(details);
+    const opened = await service.readClient();
+    await service.updateClient('c', { ...client, ...details, loanTermDays: 45 }, opened);
+    const saved = await service.readClient();
+    expect(saved).toMatchObject(details);
+    expect(saved.revision).toBeTruthy();
+    expect((await getDoc(doc(service.db, 'clients/c'))).data()).toMatchObject({ customImportedField: { keep: true } });
+    await expect(service.updateClient('c', { ...client, loanTermDays: 45 }, opened)).rejects.toThrow('another session');
+    await service.updateClient('c', { ...client, loanTermDays: 45, validIdType: '', validIdNumber: '', validIdIssuedOn: '', validIdIssuedAt: '', coMaker: { name: '', contactNumber: '' }, promissoryNote: { payee: '', interestStatement: '', executionPlace: '' } }, saved);
+    expect(await service.readClient()).toMatchObject({ validIdType: '', validIdNumber: '', coMaker: { name: '', contactNumber: '' }, promissoryNote: { payee: '' } });
+  });
+
+  it('preserves saved client details through renewal, Trash and restore', async () => {
+    const service = await services();
+    await service.updateClient('c', { ...client, ...details, loanTermDays: 45 }, await service.readClient());
+    await service.renewClient(await service.readClient(), terms, 'Renew with identity preserved');
+    expect(await service.readClient()).toMatchObject(details);
+    const action = service.createTrashAction('trash', [{ id: 'c' }]);
+    await action();
+    const archived = (await getDoc(doc(service.db, 'clientTrash/c'))).data()!;
+    expect(archived.client).toMatchObject(details);
+    await service.createTrashAction('restore', [{ id: 'c', trashId: archived.trashId }])();
+    expect(await service.readClient()).toMatchObject(details);
+  });
+
+  it('does not grant collectors permission to edit client identity or note text', async () => {
+    const service = await services('collector');
+    await expect(service.updateClient('c', { ...client, ...details, loanTermDays: 45 }, await service.readClient())).rejects.toThrow();
+    expect((await getDoc(doc(service.db, 'clients/c'))).data()).not.toHaveProperty('coMaker');
+  });
+});
+
 describe('developer accounting access through production services', () => {
+  it.each(['admin', 'developer'])('%s saves and reloads both states of the daily summary filter', async uid => {
+    const service = await services(uid);
+    await service.initializeSettings(uid);
+    let expected = { ...structuredClone(DEFAULT_SETTINGS), schedule: { skipSundays: true } };
+    const path = doc(service.db, 'settings/Printables/elements/summaryTemplate');
+    expect((await getDoc(path)).data()?.onlyClientsWithPayments).toBe(true);
+    for (const onlyClientsWithPayments of [false, true]) {
+      const next = { ...expected, summary: { onlyClientsWithPayments } };
+      await service.saveSettings(next, uid, expected);
+      await service.initializeSettings(uid);
+      expect((await getDoc(path)).data()).toMatchObject({ onlyClientsWithPayments, updatedBy: uid });
+      expected = next;
+    }
+  });
+  it.each(['admin', 'developer'])('%s persists and reloads the optional ID page and independent box dimensions', async uid => {
+    const service = await services(uid);
+    await service.initializeSettings(uid);
+    const saved = { ...structuredClone(DEFAULT_SETTINGS), schedule: { skipSundays: true } };
+    const next = { ...saved, promissory: { ...saved.promissory, includeIdPage: true, clientIdWidthMm: 90, clientIdHeightMm: 60, coMakerIdWidthMm: 100, coMakerIdHeightMm: 65 } };
+    await service.saveSettings(next, uid, saved);
+    await service.initializeSettings(uid);
+    const path = doc(service.db, 'settings/Printables/elements/promissoryTemplate');
+    expect((await getDoc(path)).data()).toMatchObject({ ...next.promissory, updatedBy: uid });
+    await expect(service.saveSettings(saved, uid, saved)).rejects.toThrow('another session');
+    const disabled = { ...next, promissory: { ...next.promissory, includeIdPage: false } };
+    await service.saveSettings(disabled, uid, next);
+    expect((await getDoc(path)).data()).toMatchObject(disabled.promissory);
+  });
+
   it.each(['admin', 'developer'])('%s persists metric visibility through initialization without changing accounting policy', async uid => {
     const service = await services(uid);
     await service.initializeSettings(uid);

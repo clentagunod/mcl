@@ -18,6 +18,18 @@ const snapshot = (expensesEnabled: boolean, fromCache = false, hasPendingWrites 
 beforeEach(() => fake.feeds.clear());
 
 describe('server-confirmed feature settings', () => {
+  it('loads and updates the daily summary filter from the shared Printables document', () => {
+    const onData = vi.fn(); const onError = vi.fn(); const stop = subscribeSettings(onData, onError);
+    fake.feeds.get('settings/Configurations/elements')!.next(snapshot(false));
+    const printables = fake.feeds.get('settings/Printables/elements')!;
+    printables.next({ metadata: { fromCache: false, hasPendingWrites: false }, docs: [] });
+    expect(onData).toHaveBeenLastCalledWith(expect.objectContaining({ summary: { onlyClientsWithPayments: true } }));
+    for (const onlyClientsWithPayments of [false, true]) {
+      printables.next({ metadata: { fromCache: false, hasPendingWrites: false }, docs: [{ id: 'summaryTemplate', data: () => ({ onlyClientsWithPayments }) }] });
+      expect(onData).toHaveBeenLastCalledWith(expect.objectContaining({ summary: { onlyClientsWithPayments } }));
+    }
+    expect(onError).not.toHaveBeenCalled(); stop();
+  });
   it('does not enable expense feeds from cached settings or uncommitted local policy writes', () => {
     const onData = vi.fn(); const onError = vi.fn(); const stop = subscribeSettings(onData, onError);
     const configurations = fake.feeds.get('settings/Configurations/elements')!;

@@ -95,7 +95,7 @@ test('all workspace pages render inside the real shell without runtime errors', 
 
   const destinations = [
     ['Clients', 'Clients'],
-    ['Printables', 'Print studio'],
+    ['Printables', 'Printables'],
     ['Consolidation', 'Consolidation / Liquidation'],
     ['Collectors & Admins', 'Collectors & Admins'],
     ['Holidays', 'Holidays'],
@@ -112,7 +112,7 @@ test('all workspace pages render inside the real shell without runtime errors', 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow, `${label} should keep overflow inside its own workspace`).toBeLessThanOrEqual(1);
     if (label === 'Printables') {
-      await expect(page.getByTitle('Index Card print preview', { exact: true })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Go to another page for printing', exact: true })).toHaveAttribute('target', '_blank');
       await page.screenshot({ path: '.tmp/workspace-printables.png', fullPage: true });
     }
     if (label === 'Settings') await page.screenshot({ path: '.tmp/workspace-settings.png', fullPage: true });

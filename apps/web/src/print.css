@@ -1,7 +1,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; background: #e7ebf0; color: #000; }
 body { font-family: Calibri, Arial, sans-serif; font-size: var(--print-font); line-height: 1.15; }
-.sheet { width: var(--page-width); min-height: var(--page-height); padding: var(--page-margin); margin: 0 0 8mm; background: #fff; break-after: page; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.sheet { position: relative; width: var(--page-width); min-height: var(--page-height); padding: var(--page-margin); margin: 0 0 8mm; background: #fff; break-after: page; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 .sheet:last-child { break-after: auto; margin-bottom: 0; }
 .sheet-body { width: 100%; }
 h1, p { margin: 0; }
@@ -34,6 +34,15 @@ td, th { overflow-wrap: anywhere; }
 .note-signatures td { border: 0; padding: 0 3.175mm 0 0; vertical-align: top; text-align: left; }
 .note-signatures tr:first-child td { height: 7mm; vertical-align: bottom; }
 .note-signature-name { display: inline-block; }
+.id-page-heading { text-align: center; margin: 4mm 0 8mm; }
+.id-page-heading h1 { font-size: 1.3em; line-height: 1.25; }
+.id-page-heading p { font-size: .85em; margin-top: 2mm; }
+.id-page-slots { display: flex; flex-direction: column; gap: 12mm; }
+.id-placement { text-align: center; break-inside: avoid; }
+.id-placement h2 { font-size: 1em; line-height: 1.35; margin: 0; }
+.id-placement-name { font-size: .85em; line-height: 1.2; margin: 1mm 0 3mm; overflow-wrap: anywhere; }
+.id-placement-box { border: .3mm solid #000; margin: 0 auto; display: flex; align-items: center; justify-content: center; padding: 1mm; }
+.id-placement-box span { font-size: .85em; line-height: 1.2; overflow-wrap: anywhere; }
 .note-id-boxes { display: flex; justify-content: space-around; gap: 8mm; margin-top: 5mm; }
 .note-id-boxes > div { border: .3mm solid #000; width: 48%; min-height: 25mm; text-align: center; font: bold 20pt 'Arial Black', Arial, sans-serif; padding-top: 2mm; }
 .summary-heading { display: flex; align-items: center; gap: 3mm; padding-bottom: 4mm; border-bottom: .5mm solid #1f4e79; margin-bottom: 3mm; }
@@ -47,10 +56,23 @@ td, th { overflow-wrap: anywhere; }
 .summary-table tfoot { display: table-row-group; }
 .summary-table tfoot th, .summary-table tfoot td { background: #e5ecf3; }
 .summary-footer { display: flex; justify-content: space-between; margin-top: 6mm; font-size: .9em; }
+.print-artwork { position: absolute; z-index: 10; transform-origin: center; touch-action: none; }
+.print-artwork > img { width: 100%; height: 100%; display: block; object-fit: fill; user-select: none; pointer-events: none; }
+body[data-editing-images='true'] .print-artwork { cursor: move; }
+body[data-editing-images='true'] .print-artwork[data-locked='true'] { cursor: default; }
+body[data-editing-images='true'] .print-artwork[data-selected='true'] { outline: .4mm solid #2769ba; }
+.artwork-handle { position: absolute; width: 3mm; height: 3mm; padding: 0; border: .3mm solid #2769ba; background: white; border-radius: .4mm; touch-action: none; }
+.artwork-nw { left: -1.5mm; top: -1.5mm; cursor: nwse-resize; }
+.artwork-ne { right: -1.5mm; top: -1.5mm; cursor: nesw-resize; }
+.artwork-sw { left: -1.5mm; bottom: -1.5mm; cursor: nesw-resize; }
+.artwork-se { right: -1.5mm; bottom: -1.5mm; cursor: nwse-resize; }
+.artwork-rotate { left: calc(50% - 1.5mm); top: -7mm; border-radius: 50%; background: #dceaff; cursor: grab; }
 @media print {
   html, body { background: #fff; }
   .sheet { margin: 0; }
   thead { display: table-header-group; }
   tr { break-inside: avoid; }
   .note-p { orphans: 2; widows: 2; }
+  .artwork-handle { display: none !important; }
+  .print-artwork { outline: none !important; }
 }

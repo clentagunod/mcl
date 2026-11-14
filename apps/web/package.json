@@ -8,6 +8,7 @@
     "test:rules": "node scripts/test-firestore-rules.mjs",
     "test:renewals": "node scripts/test-firestore-rules.mjs --spark",
     "test:spark": "node scripts/test-firestore-rules.mjs --spark",
+    "test:printing-session": "node scripts/test-printing-session.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",

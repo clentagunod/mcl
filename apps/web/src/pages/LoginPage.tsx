@@ -1,5 +1,5 @@
 import { useId, useState, type FormEvent } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { FormField } from '../components/FormField';
 import { PublicPage } from '../components/PublicPage';
 import { LoadingState } from '../components/StateMessage';
@@ -8,6 +8,9 @@ import { describeError } from '../lib/errors';
 import { Icon } from '../components/Icon';
 
 export default function LoginPage() {
+  const location = useLocation();
+  const routeState = location.state as { from?: unknown; printingSessionEnded?: boolean } | null;
+  const destination = typeof routeState?.from === 'string' && routeState.from.split('?')[0] === '/print-studio' ? routeState.from : '/';
   const { status, accessError, signIn } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -17,7 +20,7 @@ export default function LoginPage() {
   const passwordId = useId();
 
   if (status === 'loading') return <PublicPage className="login-page"><LoadingState /></PublicPage>;
-  if (status === 'signedIn') return <Navigate to="/" replace />;
+  if (status === 'signedIn') return <Navigate to={destination} replace />;
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -57,6 +60,7 @@ export default function LoginPage() {
             <span className="public-eyebrow">Welcome to MCL</span>
             <h1 id="login-title">Welcome back.</h1>
             <p className="muted login-description">Sign in to your lending workspace.</p>
+            {routeState?.printingSessionEnded && <p className="alert alert-info" role="status">Your printing session has ended. Temporary images, signatures and print adjustments have been cleared. Sign in again to continue.</p>}
 
             {message && (
               <p className="alert alert-error" role="alert">

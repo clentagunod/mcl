@@ -99,12 +99,12 @@ xml = re.sub(r'<w:p\b[^>]*>.*?</w:p>', spaced_paragraph, xml, flags=re.S)
 
 # Match corresponding signature fields in fixed columns instead of using tabs.
 signature_rows = [
-    ('_______________________', '{{borrower}}'),
+    ('{{coMakerName}}', '{{borrower}}'),
     ('Co-Maker Signature over Printed Name', 'Debtor/Borrower Signature'),
-    ('Valid ID: __________', 'Valid ID: __________'),
-    ('Valid ID #: _______________', 'Valid ID #: _______________'),
-    ('Issued on ________at___________', 'Issued on ________at___________'),
-    ('Contact Number: ____________', 'Contact Number: {{cellphone}}'),
+    ('Valid ID: {{coMakerValidIdType}}', 'Valid ID: {{validIdType}}'),
+    ('Valid ID #: {{coMakerValidIdNumber}}', 'Valid ID #: {{validIdNumber}}'),
+    ('Issued on {{coMakerValidIdIssuedOn}} at {{coMakerValidIdIssuedAt}}', 'Issued on {{validIdIssuedOn}} at {{validIdIssuedAt}}'),
+    ('Contact Number: {{coMakerContactNumber}}', 'Contact Number: {{cellphone}}'),
 ]
 paragraph_matches = list(re.finditer(r'<w:p\b[^>]*>.*?</w:p>', xml, re.S))
 assert '{{borrower}}' in paragraph_matches[14].group()
@@ -116,7 +116,7 @@ column_width = table_width // 2
 
 
 def signature_cell(value, row, column):
-    emphasis = '<w:b/><w:u w:val="single"/>' if row == 0 and column == 1 else ''
+    emphasis = '<w:b/><w:u w:val="single"/>' if row == 0 else ''
     keep_next = '<w:keepNext/>' if row < len(signature_rows) - 1 else ''
     return f'''<w:tc><w:tcPr><w:tcW w:w="{column_width}" w:type="dxa"/><w:vAlign w:val="bottom"/></w:tcPr>
 <w:p><w:pPr><w:pStyle w:val="NoSpacing"/>{keep_next}<w:spacing w:before="0" w:after="0" w:line="324" w:lineRule="auto"/></w:pPr>
@@ -179,7 +179,7 @@ for i, p in enumerate(paragraphs):
             for column, value in enumerate(values):
                 content = html.escape(value)
                 if row == 0:
-                    content = '<span class="note-signature-name">' + ('<b><u>' + content + '</u></b>' if column else content) + '</span>'
+                    content = '<span class="note-signature-name"><b><u>' + content + '</u></b></span>'
                 cells.append('<td>' + content + '</td>')
             table_rows.append('<tr>' + ''.join(cells) + '</tr>')
         html_parts.append('<table class="note-signatures" aria-label="Co-maker and borrower signatures"><colgroup><col style="width:50%"><col style="width:50%"></colgroup><tbody>' + ''.join(table_rows) + '</tbody></table>')

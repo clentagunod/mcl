@@ -1,0 +1,27 @@
+# Client identification and co-maker details
+
+The shared Clients add/edit form includes optional borrower identification and a fully optional Co-maker details section. The same form is available directly from Print Studio → Promissory Note → Edit promissory note, including a client selector for bulk notes. Printing Mode allows editing; View Only keeps inspection read-only.
+
+Both parties can choose one of the ten supplied Philippine ID types or specify a custom type. Custom labels are saved as the actual `validIdType` string and reopen correctly. ID numbers preserve leading zeroes. Dates are optional real `YYYY-MM-DD` calendar dates. A partial co-maker section is valid; choosing Custom requires its specification.
+
+The existing `clients/{id}` Firestore document stores optional borrower fields `validIdType`, `validIdNumber`, `validIdIssuedOn`, `validIdIssuedAt` and an optional `coMaker` map with `name`, the same four ID fields and `contactNumber`. Borrower contact remains `cellphone`. Old records need no migration. Clearing a value saves an empty string, including an empty co-maker map's fields, so previously saved details can be removed.
+
+The note editor also edits borrower identity/contact/address and loan terms. Derived amounts, amount in words and execution date follow the saved loan values. Allocated client and transaction numbers remain read-only. Per-client `promissoryNote` overrides (`payee`, `interestStatement`, `executionPlace`) fall back individually to the shared promissory template when blank. Ordinary Clients edits preserve the overrides; they do not change global template settings.
+
+Saves use the existing Firestore transaction with a server timestamp and compare the opened client's original identity, co-maker, note text and loan fields to reject concurrent edits, including legacy writes that did not advance the timestamp. The modal retains failed drafts, is not dismissible during a save, and closes only after a successful commit or explicit cancellation. The shared client subscription updates preview and exports after saving.
+
+The HTML and Word signature tables retain the reference's aligned co-maker/borrower columns and use saved names, ID types/numbers, issue dates/locations and contact numbers. Every empty co-maker field prints `N/A`, including each unfilled field of a partial co-maker. This display fallback never changes stored values. Missing borrower ID details keep blank lines; missing borrower cellphone prints `N/A`. Preview, print/PDF, Word and standalone HTML use the same value resolver. Source values are escaped before insertion into HTML/XML. Update both generated templates and `scripts/prepare-print-templates.py` when changing the source template structure.
+
+## Optional ID placement page
+
+Settings → Promissory note has an **Include ID placement page** switch, Off by default. The existing `settings/Printables/elements/promissoryTemplate` document persists `includeIdPage` and independent `clientIdWidthMm`, `clientIdHeightMm`, `coMakerIdWidthMm`, `coMakerIdHeightMm` numeric dimensions. Width/height default to 85.6 × 54 mm for each party. Existing documents missing the new fields retain those defaults without a migration. Turning the feature off preserves saved sizes.
+
+When enabled, each client's note is immediately followed by one separate attachment sheet on the same paper, orientation and margins. Two vertically arranged boxes identify the Client / Borrower ID and Co-maker ID, show their printed names, and say **Put your ID here**. The dimensions can be adjusted independently in Settings. Both slots appear even if the co-maker name is N/A. Batch jobs alternate note/attachment for every client.
+
+The settings service rejects nonfinite or out-of-range dimensions (10–500 mm), and rejects an enabled layout that cannot fit the saved paper with its headings and spacing. Print Studio also checks temporary paper/margin changes against the saved sizes and measures actual overflow. Box dimensions stay physical; no automatic scaling changes an actual ID's size. Settings use the existing transaction, metadata, live subscription and stale-editor protection.
+
+The page is included in browser print/PDF and standalone HTML, and inside every individual Word export or bulk ZIP member. Word uses an explicit page break and native bordered tables with saved widths and exact-height rows. The later [Print Studio editor](print-editor.md) adds session-only ID images and e-signatures on these pages without adding image storage fields.
+
+Current canonical Firestore rules already allow administrator/developer client updates with these optional fields. This feature does not require a rules change or production data migration. Android implementation instructions and the exact shared schema are in `apps/android/context.md`.
+
+Validation covers optional/partial/cleared details, all ID options, custom round-trips, issue dates, contact normalization, Firestore writes/conversion and stale edits, note value resolution and escaping. Browser coverage in `tests/client-identification.e2e.ts` checks add/edit, reload, bulk editing, save errors, and matching preview/Word/HTML output with an isolated persistent test store. `tests/promissory-id-page.e2e.ts` covers N/A fallbacks, enable/resize/disable/reload, physical dimensions, PDF page counts, Word/HTML parity, bulk page ordering, layout validation and failed saves. Firestore emulator coverage verifies the saved toggle and dimensions under administrator/developer identities.

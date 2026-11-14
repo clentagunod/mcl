@@ -42,6 +42,42 @@ function clientSnapshot() {
   return clientFromDoc({ id: 'c', data: () => fake.documents.get('clients/c') } as Parameters<typeof clientFromDoc>[0]);
 }
 describe('stale client editor protection', () => {
+  it('persists identity fields on creation and reads the same data for editing', async () => {
+    const details = { validIdType: 'Philippine Passport', validIdNumber: '001234', validIdIssuedOn: '2024-01-02', validIdIssuedAt: 'Davao', coMaker: { name: 'Maria Reyes', validIdType: 'Company ID', validIdNumber: '00023', validIdIssuedOn: '', validIdIssuedAt: '', contactNumber: '09171234567' } };
+    await addClient({ ...input, ...details });
+    const saved = fake.documents.get('clients/mcl0001')!;
+    expect(saved).toMatchObject(details);
+    expect(clientFromDoc({ id: 'mcl0001', data: () => saved } as Parameters<typeof clientFromDoc>[0])).toMatchObject(details);
+  });
+
+  it('saves and clears note details while ordinary edits preserve overrides and unrelated fields', async () => {
+    fake.documents.set('clients/c', { ...input, androidField: 'preserved' });
+    const promissoryNote = { payee: 'MCL', executionPlace: 'Tagum', interestStatement: 'Fixed interest' };
+    await updateClient('c', { ...input, validIdType: 'Company ID', coMaker: { name: 'Maria', contactNumber: '' }, promissoryNote }, clientSnapshot());
+    expect(clientSnapshot()).toMatchObject({ validIdType: 'Company ID', coMaker: { name: 'Maria' }, promissoryNote });
+    await updateClient('c', { ...input, address: 'New address' }, clientSnapshot());
+    expect(fake.documents.get('clients/c')).toMatchObject({ androidField: 'preserved', promissoryNote });
+    await updateClient('c', { ...input, validIdType: '', coMaker: { name: '', contactNumber: '' }, promissoryNote: { payee: '', executionPlace: '', interestStatement: '' } }, clientSnapshot());
+    expect(clientSnapshot()).toMatchObject({ validIdType: '', coMaker: { name: '' }, promissoryNote: { payee: '' } });
+  });
+
+  it.each([
+    { validIdNumber: 'other-id' },
+    { coMaker: { name: 'Another co-maker', contactNumber: '' } },
+    { promissoryNote: { payee: 'Another payee' } },
+  ])('rejects stale identity or note edits even without a timestamp (%j)', async changed => {
+    fake.documents.set('clients/c', { ...input });
+    const opened = clientSnapshot();
+    fake.documents.set('clients/c', { ...input, ...changed });
+    await expect(updateClient('c', input, opened)).rejects.toThrow('another session');
+    expect(fake.writes).toEqual([]);
+  });
+
+  it('treats absent optional maps and malformed legacy fields as empty', () => {
+    fake.documents.set('clients/c', { ...input, validIdNumber: 123, coMaker: 'legacy', promissoryNote: null });
+    expect(clientSnapshot()).toMatchObject({ validIdNumber: '', coMaker: { name: '', contactNumber: '' }, promissoryNote: { payee: '' } });
+  });
+
   it('saves current edits but rejects a second editor with stale fields on a legacy record', async () => {
     fake.documents.set('clients/c', { ...input }); const opened = clientSnapshot();
     await updateClient('c', { ...input, address: 'Changed' }, opened);
@@ -153,7 +189,8 @@ describe('shared settings persistence', () => {
     expect(fake.documents.get('settings/Configurations/elements/accountingPolicy')).toMatchObject({ paymentAllocation: 'principalFirst', expensesEnabled: false, updatedBy: 'admin' });
     expect(fake.documents.get('settings/Configurations/elements/consolidationMetrics')).toMatchObject({ ...DEFAULT_SETTINGS.consolidationMetrics, updatedBy: 'admin' });
     expect(fake.documents.get('settings/Configurations/elements/identifierPolicy')).toMatchObject({ resetWhenEmpty: false, updatedBy: 'admin' });
-    expect(fake.writes).toHaveLength(10);
+    expect(fake.documents.get('settings/Printables/elements/summaryTemplate')).toMatchObject({ onlyClientsWithPayments: true, updatedBy: 'admin' });
+    expect(fake.writes).toHaveLength(11);
   });
   it('round-trips the Sunday policy and initialization preserves the saved value', async () => {
     let expected = structuredClone(DEFAULT_SETTINGS);
@@ -163,6 +200,19 @@ describe('shared settings persistence', () => {
       await initializeSettings('admin');
       const actual = mergeSettings({ schedule: fake.documents.get('settings/Configurations/elements/loanSchedule') });
       expect(actual.schedule.skipSundays).toBe(skipSundays);
+      expected = next;
+    }
+    await expect(saveSettings(DEFAULT_SETTINGS, 'admin', DEFAULT_SETTINGS)).rejects.toThrow('another session');
+  });
+  it('persists the daily summary filter on and off without initialization replacing saved values', async () => {
+    let expected = structuredClone(DEFAULT_SETTINGS);
+    for (const onlyClientsWithPayments of [false, true, false]) {
+      const next = { ...expected, summary: { onlyClientsWithPayments } };
+      await saveSettings(next, 'admin', expected);
+      await initializeSettings('admin');
+      const saved = fake.documents.get('settings/Printables/elements/summaryTemplate');
+      expect(saved).toMatchObject({ onlyClientsWithPayments, updatedBy: 'admin', updatedAt: 'SERVER_TIMESTAMP' });
+      expect(mergeSettings({ summary: saved }).summary).toEqual(next.summary);
       expected = next;
     }
     await expect(saveSettings(DEFAULT_SETTINGS, 'admin', DEFAULT_SETTINGS)).rejects.toThrow('another session');
@@ -181,5 +231,25 @@ describe('shared settings persistence', () => {
     expect(fake.writes).toHaveLength(writes);
     expect(mergeSettings({ accounting: fake.documents.get('settings/Configurations/elements/accountingPolicy') }).accounting).toEqual(next.accounting);
     await expect(saveSettings(DEFAULT_SETTINGS, 'admin', DEFAULT_SETTINGS)).rejects.toThrow('another session');
+  });
+  it('round-trips the optional ID page and both box sizes, preserves them on initialization and rejects stale settings', async () => {
+    const next = structuredClone(DEFAULT_SETTINGS);
+    next.promissory = { ...next.promissory, includeIdPage: true, clientIdWidthMm: 90, clientIdHeightMm: 60, coMakerIdWidthMm: 100, coMakerIdHeightMm: 65 };
+    await saveSettings(next, 'admin', DEFAULT_SETTINGS);
+    await initializeSettings('admin');
+    const path = 'settings/Printables/elements/promissoryTemplate';
+    expect(mergeSettings({ promissory: fake.documents.get(path) }).promissory).toEqual(next.promissory);
+    expect(fake.documents.get(path)).toMatchObject({ updatedBy: 'admin', updatedAt: 'SERVER_TIMESTAMP' });
+    await expect(saveSettings(DEFAULT_SETTINGS, 'admin', DEFAULT_SETTINGS)).rejects.toThrow('another session');
+    const disabled = { ...next, promissory: { ...next.promissory, includeIdPage: false } };
+    await saveSettings(disabled, 'admin', next);
+    expect(mergeSettings({ promissory: fake.documents.get(path) }).promissory).toEqual(disabled.promissory);
+  });
+  it('rejects an enabled ID page that cannot fit the saved paper before any writes', async () => {
+    const next = structuredClone(DEFAULT_SETTINGS);
+    next.promissory.includeIdPage = true;
+    next.promissory.clientIdWidthMm = 200;
+    await expect(saveSettings(next, 'admin', DEFAULT_SETTINGS)).rejects.toThrow('do not fit');
+    expect(fake.writes).toEqual([]);
   });
 });

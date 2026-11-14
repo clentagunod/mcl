@@ -189,7 +189,7 @@ export function AccountsContent({ accounts, loading, error }: AccountsContentPro
       {modal?.type === 'delete' && (
         <ConfirmDialog
           title={`Delete ${modal.account.role}`}
-          message={`Delete ${modal.account.fullName}? They lose data access immediately. Payments they already entered are kept. Their login remains in Firebase Authentication until removed in the Firebase Console.`}
+          message={`Delete ${modal.account.fullName}? They lose data access immediately. Payments they already entered are kept. Their sign-in account remains registered until a system administrator removes it.`}
           confirmLabel={`Delete ${modal.account.role}`}
           danger
           onConfirm={() => deleteAccount(modal.account.uid)}

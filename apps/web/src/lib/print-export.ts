@@ -3,7 +3,9 @@ import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import noteTemplateUrl from '../templates/promissory.docx?url';
 import type { Client } from '../types';
 import { escapeHtml, renderPrintDocument, type PrintJob } from './print-renderer';
-import { paperDimensions, promissoryValues, publicClientId } from './printables';
+import { paperDimensions, promissoryIdPageError, promissoryIdSlots, promissoryValues, publicClientId } from './printables';
+import { DEFAULT_PRESENTATION } from './print-studio';
+import { wordImageAnchors } from './print-word-images';
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const mmToTwip = (mm: number) => Math.round(mm / 25.4 * 1440);
@@ -23,6 +25,10 @@ async function fetchBytes(url: string): Promise<Uint8Array> {
 }
 
 function originalNote(job: PrintJob, client: Client, logo: Uint8Array, template: Uint8Array): Uint8Array {
+  const error = promissoryIdPageError(job.settings.promissory, job.layout);
+  if (error) throw new Error(error);
+  // Share the renderer's preflight, including attachment/image consistency checks.
+  renderPrintDocument({ ...job, clients: [client] });
   const files = unzipSync(template);
   const values = promissoryValues(client, job.settings);
   let xml = strFromU8(files['word/document.xml']);
@@ -45,14 +51,56 @@ function originalNote(job: PrintJob, client: Client, logo: Uint8Array, template:
   });
   // A compact logo in the title; all source paragraph/run structures are retained.
   const logoRun = '<w:r><w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" distT="0" distB="0" distL="0" distR="0"><wp:extent cx="288000" cy="288000"/><wp:docPr id="9001" name="MCL logo"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="9001" name="MCL logo"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdMclLogo"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="288000" cy="288000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r><w:r><w:t xml:space="preserve">  </w:t></w:r>';
-  xml = xml.replace(/(<w:body>\s*<w:p\b[^>]*>\s*<w:pPr>.*?<\/w:pPr>)/s, `$1${logoRun}`);
+  const presentation = job.presentation ?? DEFAULT_PRESENTATION;
+  const embedded = wordImageAnchors((job.images ?? []).filter(image => image.clientId === client.id), size, files);
+  const noteImages = embedded.runs.filter(item => item.image.page === 'note').map(item => item.run).join('');
+  xml = xml.replace(/(<w:body>\s*<w:p\b[^>]*>\s*<w:pPr>.*?<\/w:pPr>)/s, opening => opening + (presentation.hideLogo ? '' : logoRun) + noteImages);
+  if (job.settings.promissory.includeIdPage) {
+    // Append inside the existing section so the attachment inherits paper and margins.
+    const attachmentImages = embedded.runs.filter(item => item.image.page === 'id').map(item => item.run).join('');
+    const attachment = idPlacementPageXml(job, client).replace('</w:pPr>', closing => closing + attachmentImages);
+    xml = xml.replace(/<w:sectPr\b[^>]*>.*?<\/w:sectPr>\s*<\/w:body>/s, section => attachment + section);
+  }
+  if (presentation.font !== 'Template font') {
+    const font = `<w:rFonts w:ascii="${presentation.font}" w:hAnsi="${presentation.font}"/>`;
+    xml = xml.replace(/<w:rFonts\b[^>]*\/>/g, font);
+    if (files['word/styles.xml']) files['word/styles.xml'] = strToU8(strFromU8(files['word/styles.xml']).replace(/<w:rFonts\b[^>]*\/>/g, font));
+  }
+  if (presentation.lineSpacing) xml = xml.replace(/w:line="\d+"/g, `w:line="${Math.round(presentation.lineSpacing * 240)}"`);
+  if (presentation.noteAlignment !== 'template') {
+    const tableStart = xml.indexOf('<w:tbl>');
+    const body = xml.slice(0, tableStart).replace(/<w:p\b[^>]*>.*?<\/w:p>/gs, paragraph => {
+      if (paragraph.includes('w:val="center"') || paragraph.includes('PRINCIPAL AMOUNT:')) return paragraph;
+      const alignment = `<w:jc w:val="${presentation.noteAlignment === 'justify' ? 'both' : 'left'}"/>`;
+      return paragraph.includes('<w:jc ') ? paragraph.replace(/<w:jc\b[^>]*\/>/, alignment) : paragraph.replace('</w:pPr>', alignment + '</w:pPr>');
+    });
+    xml = body + xml.slice(tableStart);
+  }
   files['word/document.xml'] = strToU8(xml);
   files['word/media/mcl-logo.png'] = new Uint8Array(logo);
   const relPath = 'word/_rels/document.xml.rels';
-  files[relPath] = strToU8(strFromU8(files[relPath]).replace('</Relationships>', '<Relationship Id="rIdMclLogo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/mcl-logo.png"/></Relationships>'));
+  files[relPath] = strToU8(strFromU8(files[relPath]).replace('</Relationships>', '<Relationship Id="rIdMclLogo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/mcl-logo.png"/>' + embedded.relationships + '</Relationships>'));
   const contentTypes = strFromU8(files['[Content_Types].xml']);
   if (!/Extension="png"/.test(contentTypes)) files['[Content_Types].xml'] = strToU8(contentTypes.replace('</Types>', '<Default Extension="png" ContentType="image/png"/></Types>'));
   return zipSync(files);
+}
+
+/** Fixed physical boxes in native Word tables, with an explicit new-page heading. */
+function idPlacementPageXml(job: PrintJob, client: Client): string {
+  const size = job.layout.fontSize * 2;
+  const paragraph = (text: string, { pageBreak = false, bold = false, after = 0 }: { pageBreak?: boolean; bold?: boolean; after?: number } = {}) =>
+    `<w:p><w:pPr>${pageBreak ? '<w:pageBreakBefore/>' : ''}<w:spacing w:before="0" w:after="${mmToTwip(after)}"/><w:jc w:val="center"/></w:pPr><w:r><w:rPr>${bold ? '<w:b/>' : ''}<w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr><w:t xml:space="preserve">${escapeHtml(text)}</w:t></w:r></w:p>`;
+  const slots = promissoryIdSlots(client, job.settings.promissory);
+  return paragraph('IDENTIFICATION DOCUMENTS', { pageBreak: true, bold: true, after: 2 })
+    + paragraph('Promissory note attachment', { after: 2 })
+    + paragraph(`${publicClientId(client)} · Transaction ${client.transactionNumber || 'Pending'}`, { after: 8 })
+    + slots.map(slot => {
+      const width = mmToTwip(slot.width);
+      const hasImage = job.images?.some(image => image.clientId === client.id && image.page === 'id' && image.party === slot.key && image.purpose === 'id');
+      return paragraph(slot.label, { bold: true, after: 1 }) + paragraph(slot.name, { after: 3 })
+        + `<w:tbl><w:tblPr><w:tblW w:w="${width}" w:type="dxa"/><w:jc w:val="center"/><w:tblBorders>${['top', 'left', 'bottom', 'right'].map(side => `<w:${side} w:val="single" w:sz="6" w:color="000000"/>`).join('')}</w:tblBorders><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="${width}"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/><w:trHeight w:val="${mmToTwip(slot.height)}" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="${width}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>${paragraph(hasImage ? '' : 'Put your ID here')}</w:tc></w:tr></w:tbl>`
+        + paragraph('', { after: 8 });
+    }).join('');
 }
 
 /** Native Word tables, rather than an HTML file disguised with a .doc extension. */
@@ -60,10 +108,11 @@ async function tableDocument(job: PrintJob, logo: Uint8Array): Promise<Uint8Arra
   const parsed = new DOMParser().parseFromString(renderPrintDocument(job).html, 'text/html');
   const size = paperDimensions(job.layout, job.kind, Math.max(45, ...job.clients.map((c) => c.loanTermDays)));
   const font = job.layout.fontSize;
+  const presentation = job.presentation ?? DEFAULT_PRESENTATION;
   const paragraph = (text: string, bold = false, centered = false, fill?: string, small = false) => new Paragraph({
-    children: [new TextRun({ text, bold, font: job.kind === 'index' ? 'Aptos Narrow' : 'Calibri', size: Math.round(font * (small ? 1.65 : 2)) })],
+    children: [new TextRun({ text, bold, font: presentation.font === 'Template font' ? job.kind === 'index' ? 'Aptos Narrow' : 'Calibri' : presentation.font, size: Math.round(font * (small ? 1.65 : 2)) })],
     alignment: centered ? AlignmentType.CENTER : undefined,
-    spacing: { before: 0, after: 0 },
+    spacing: { before: 0, after: 0, ...(presentation.lineSpacing ? { line: Math.round(presentation.lineSpacing * 240) } : {}) },
     shading: fill ? { fill: fill.slice(1) } : undefined,
   });
   function table(element: HTMLTableElement): Table {
@@ -92,7 +141,7 @@ async function tableDocument(job: PrintJob, logo: Uint8Array): Promise<Uint8Arra
     return new Table({ rows, width: { size: 100, type: WidthType.PERCENTAGE } });
   }
   const sections = [...parsed.querySelectorAll('.sheet')].map((sheet) => {
-    const children: FileChild[] = [new Paragraph({ alignment: AlignmentType.CENTER, children: [new ImageRun({ type: 'png', data: logo, transformation: { width: 30, height: 30 } })], spacing: { after: 20 } })];
+    const children: FileChild[] = presentation.hideLogo ? [] : [new Paragraph({ alignment: AlignmentType.CENTER, children: [new ImageRun({ type: 'png', data: logo, transformation: { width: 30, height: 30 } })], spacing: { after: 20 } })];
     const body = sheet.querySelector('.sheet-body')!;
     for (const element of body.children) {
       if (element.tagName === 'TABLE') children.push(table(element as HTMLTableElement));

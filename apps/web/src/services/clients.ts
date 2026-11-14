@@ -101,7 +101,13 @@ export async function updateClient(id: string, input: ClientInput, expected: Cli
     // Compare fields as well as the timestamp: legacy records may lack updatedAt,
     // and older import tools may not advance it when they change a loan.
     const fields = ['firstName', 'middleName', 'lastName', 'address', 'cellphone', 'principal', 'interest', 'loanTermDays', 'approvalDate', 'dailyAmount', 'transactionNumber', 'renewalCount', 'revision'] as const;
-    if (loanId(current) !== loanId(expected) || fields.some((key) => current[key] !== expected[key])) {
+    const identityFields = ['validIdType', 'validIdNumber', 'validIdIssuedOn', 'validIdIssuedAt'] as const;
+    const coMakerFields = ['name', 'contactNumber', ...identityFields] as const;
+    const noteFields = ['payee', 'interestStatement', 'executionPlace'] as const;
+    if (loanId(current) !== loanId(expected) || fields.some((key) => current[key] !== expected[key])
+      || identityFields.some(key => (current[key] ?? '') !== (expected[key] ?? ''))
+      || coMakerFields.some(key => (current.coMaker?.[key] ?? '') !== (expected.coMaker?.[key] ?? ''))
+      || noteFields.some(key => (current.promissoryNote?.[key] ?? '') !== (expected.promissoryNote?.[key] ?? ''))) {
       throw new Error('This client changed in another session. Close and reopen Edit before saving.');
     }
     transaction.update(ref, { ...input, updatedAt: serverTimestamp() });

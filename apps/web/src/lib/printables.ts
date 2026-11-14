@@ -1,6 +1,6 @@
 import { DEFAULT_SETTINGS, type AppSettings, type PrintLayout, type PrintableKind } from '../config/settings';
 import type { Client, Payment } from '../types';
-import { isISODate } from './dates';
+import { formatDate, isISODate } from './dates';
 import { round2, sumAmounts } from './money';
 import { isCurrentLoanPayment } from './loan-cycle';
 
@@ -45,6 +45,13 @@ export interface SummaryEntry {
   amount: number;
   collectors: string;
   notes: string;
+}
+
+/** Match receipts by collection date across loan cycles, as the summary ledger does. */
+export function summaryClients(clients: readonly Client[], payments: readonly Payment[], date: string, onlyClientsWithPayments: boolean): Client[] {
+  if (!onlyClientsWithPayments) return [...clients];
+  const paidIds = new Set(payments.filter(payment => payment.paymentDate === date && Number.isFinite(payment.amount) && payment.amount > 0).map(payment => payment.clientId));
+  return clients.filter(client => paidIds.has(client.id));
 }
 
 /** Include every client, even with no collection; retain the notes and collectors of
@@ -110,14 +117,48 @@ export function promissoryValues(client: Client, settings: AppSettings): Record<
   const day = date.getUTCDate();
   const ordinal = day % 100 >= 11 && day % 100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[day % 10] ?? 'th');
   const money = (n: number) => n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const blank = (value?: string, line = '__________') => value?.trim() || line;
+  const issueDate = (value?: string) => value && isISODate(value) ? formatDate(value) : '________';
+  const note = client.promissoryNote;
   return {
     principal: money(client.principal), approvalDate: longDate,
     borrower: fullClientName(client).toUpperCase(), address: client.address.toUpperCase(),
-    payee: settings.promissory.payee, amountWords: pesoWords(round2(client.principal + client.interest)),
+    payee: note?.payee?.trim() || settings.promissory.payee, amountWords: pesoWords(round2(client.principal + client.interest)),
     total: money(round2(client.principal + client.interest)), term: String(client.loanTermDays),
-    interestStatement: settings.promissory.interestStatement, dailyAmount: money(dailyPayable(client)),
+    interestStatement: note?.interestStatement?.trim() || settings.promissory.interestStatement, dailyAmount: money(dailyPayable(client)),
     day: String(day), ordinal, monthYear: `${month}, ${date.getUTCFullYear()}`,
-    executionPlace: settings.promissory.executionPlace, cellphone: client.cellphone || 'N/A',
+    executionPlace: note?.executionPlace?.trim() || settings.promissory.executionPlace, cellphone: client.cellphone || 'N/A',
+    validIdType: blank(client.validIdType), validIdNumber: blank(client.validIdNumber, '_______________'),
+    validIdIssuedOn: issueDate(client.validIdIssuedOn), validIdIssuedAt: blank(client.validIdIssuedAt, '___________'),
+    coMakerName: blank(client.coMaker?.name?.toUpperCase(), 'N/A'),
+    coMakerValidIdType: blank(client.coMaker?.validIdType, 'N/A'), coMakerValidIdNumber: blank(client.coMaker?.validIdNumber, 'N/A'),
+    coMakerValidIdIssuedOn: client.coMaker?.validIdIssuedOn && isISODate(client.coMaker.validIdIssuedOn) ? formatDate(client.coMaker.validIdIssuedOn) : 'N/A',
+    coMakerValidIdIssuedAt: blank(client.coMaker?.validIdIssuedAt, 'N/A'),
+    coMakerContactNumber: blank(client.coMaker?.contactNumber, 'N/A'),
     clientNumber: publicClientId(client), transactionNumber: client.transactionNumber ?? 'Pending',
   };
+}
+
+/** Shared physical dimensions and labels for browser, HTML and Word output. */
+export function promissoryIdSlots(client: Client, settings: AppSettings['promissory']) {
+  return [
+    { key: 'client', label: 'Client / Borrower ID', name: fullClientName(client).toUpperCase(), width: settings.clientIdWidthMm, height: settings.clientIdHeightMm },
+    { key: 'co-maker', label: 'Co-maker ID', name: client.coMaker?.name?.trim().toUpperCase() || 'N/A', width: settings.coMakerIdWidthMm, height: settings.coMakerIdHeightMm },
+  ];
+}
+
+/** Keep both physical ID slots on the same sheet; never silently scale actual ID sizes. */
+export function promissoryIdPageError(settings: AppSettings['promissory'], layout: PrintLayout): string | null {
+  if (!settings.includeIdPage) return null;
+  const dimensions = [settings.clientIdWidthMm, settings.clientIdHeightMm, settings.coMakerIdWidthMm, settings.coMakerIdHeightMm];
+  if (dimensions.some(value => !Number.isFinite(value) || value < 10 || value > 500)) return 'ID box dimensions must be between 10 and 500 mm.';
+  const { width, height } = paperDimensions(layout, 'promissory');
+  const availableWidth = width - 2 * layout.marginMm;
+  // Reserve space for headings, names and the gap between the two ID slots.
+  const reservedHeight = 20 + 60 * layout.fontSize / 12;
+  if (Math.max(settings.clientIdWidthMm, settings.coMakerIdWidthMm) > availableWidth
+    || settings.clientIdHeightMm + settings.coMakerIdHeightMm + reservedHeight > height - 2 * layout.marginMm) {
+    return 'The ID boxes do not fit the promissory note paper. Reduce their width or height in Settings → Promissory note, or increase the paper size or reduce margins.';
+  }
+  return null;
 }

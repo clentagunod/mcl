@@ -7,7 +7,7 @@ import { DataProvider } from '../../src/context/DataProvider';
 import { useData } from '../../src/context/DataContext';
 import { SettingsProvider } from '../../src/context/SettingsProvider';
 import SettingsPage from '../../src/pages/SettingsPage';
-import PrintablesPage from '../../src/pages/PrintablesPage';
+import PrintStudioPage from '../../src/pages/PrintStudioPage';
 import '../../src/index.css';
 
 // Real settings and data providers; tests replace only the remote service feeds
@@ -21,7 +21,7 @@ function Content() {
   return <div className="content">
     <nav aria-label="Fixture views"><button type="button" onClick={() => setScreen('settings')}>Open settings</button><button type="button" onClick={() => setScreen('print')}>Open print studio</button></nav>
     <dl><dt>Loan due date</dt><dd><output aria-label="Loan due date">{summary.dueDate}</output></dd><dt>Status</dt><dd><output aria-label="Loan status">{summary.status}</output></dd><dt>Elapsed days</dt><dd><output aria-label="Elapsed loan days">{summary.daysElapsed}</output></dd></dl>
-    {screen === 'settings' ? <SettingsPage /> : <PrintablesPage />}
+    {screen === 'settings' ? <SettingsPage /> : <PrintStudioPage />}
   </div>;
 }
 

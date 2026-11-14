@@ -1,6 +1,7 @@
 import { collection, doc, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { DEFAULT_SETTINGS, mergeSettings, validateSettings, type AppSettings } from '../config/settings';
+import { promissoryIdPageError } from '../lib/printables';
 
 const paths = {
   identifiers: ['Configurations', 'identifierPolicy'],
@@ -8,6 +9,7 @@ const paths = {
   accounting: ['Configurations', 'accountingPolicy'],
   general: ['Configurations', 'general'], index: ['Printables', 'indexTemplate'],
   promissory: ['Printables', 'promissoryTemplate'], studio: ['Printables', 'studio'],
+  summary: ['Printables', 'summaryTemplate'],
   payments: ['Configurations', 'paymentPolicy'],
   trash: ['Configurations', 'trashPolicy'],
   schedule: ['Configurations', 'loanSchedule'],
@@ -38,7 +40,7 @@ export function subscribeSettings(onData: (settings: AppSettings) => void, onErr
 }
 
 export async function saveSettings(settings: AppSettings, uid: string, expected: AppSettings): Promise<void> {
-  const error = validateSettings(settings);
+  const error = validateSettings(settings) || promissoryIdPageError(settings.promissory, settings.studio.promissory);
   if (error) throw new Error(error);
   await runTransaction(db, async (transaction) => {
     const keys = Object.keys(paths) as (keyof typeof paths)[];

@@ -11,6 +11,7 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const ClientsPage = lazy(() => import('./pages/clients/ClientsPage'));
 const TrashPage = lazy(() => import('./pages/clients/TrashPage'));
 const PrintablesPage = lazy(() => import('./pages/PrintablesPage'));
+const PrintStudioPage = lazy(() => import('./pages/PrintStudioPage'));
 const LiquidationPage = lazy(() => import('./pages/LiquidationPage'));
 const ExpensesPage = lazy(() => import('./pages/ExpensesPage'));
 const CollectorsPage = lazy(() => import('./pages/collectors/CollectorsPage'));
@@ -25,6 +26,9 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/maintenance" element={<MaintenancePage />} />
+            <Route element={<RequireAdmin standalone />}>
+              <Route path="print-studio" element={<PrintStudioPage standalone />} />
+            </Route>
             <Route element={<RequireAdmin />}>
               <Route index element={<DashboardPage />} />
               <Route path="clients" element={<ClientsPage />} />

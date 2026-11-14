@@ -1,9 +1,9 @@
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import { DEFAULT_SETTINGS } from '../../src/config/settings';
+import { DEFAULT_SETTINGS, mergeSettings } from '../../src/config/settings';
 import { DataContext } from '../../src/context/DataContext';
 import { SettingsContext } from '../../src/context/SettingsContext';
-import PrintablesPage from '../../src/pages/PrintablesPage';
+import PrintStudioPage from '../../src/pages/PrintStudioPage';
 import type { Client, Holiday, Payment, RenewalRecord, UserProfile } from '../../src/types';
 import '../../src/index.css';
 import SettingsPage from '../../src/pages/SettingsPage';
@@ -63,13 +63,21 @@ const isClients = new URLSearchParams(location.search).get('view') === 'clients'
 const isTrash = new URLSearchParams(location.search).get('view') === 'trash';
 const isConsolidation = new URLSearchParams(location.search).get('view') === 'consolidation';
 // Preserve full-metric accounting fixtures; production defaults show the four required metrics.
-const fixtureSettings = { ...DEFAULT_SETTINGS, consolidationMetrics: isConsolidation ? { balance: true, interestCollected: true, expenseAmount: true, netIncome: true, principalReleased: true, cashSurplus: true } : DEFAULT_SETTINGS.consolidationMetrics };
+const fixtureSettings = { ...DEFAULT_SETTINGS, summary: { onlyClientsWithPayments: !new URLSearchParams(location.search).has('summaryall') }, promissory: { ...DEFAULT_SETTINGS.promissory, includeIdPage: new URLSearchParams(location.search).has('idpage') }, consolidationMetrics: isConsolidation ? { balance: true, interestCollected: true, expenseAmount: true, netIncome: true, principalReleased: true, cashSurplus: true } : DEFAULT_SETTINGS.consolidationMetrics };
 if (new URLSearchParams(location.search).has('longname')) clients[0].firstName = 'Juan Miguel Antonio Rafael Luis Eduardo Fernando Alejandro';
 
 function Fixture() {
-  const [currentClients, setCurrentClients] = useState(clients);
+  const [currentClients, setCurrentClients] = useState<Client[]>(() => {
+    const saved = new URLSearchParams(location.search).has('persistclients') ? localStorage.getItem('fixture:clients') : null;
+    return saved ? JSON.parse(saved) as Client[] : clients;
+  });
   const [currentPayments, setCurrentPayments] = useState(payments);
+  const [currentSettings, setCurrentSettings] = useState(() => {
+    const saved = new URLSearchParams(location.search).has('persistsettings') ? localStorage.getItem('fixture:settings') : null;
+    return saved ? mergeSettings(JSON.parse(saved)) : fixtureSettings;
+  });
   useEffect(() => {
+    const updateSettings = (event: Event) => setCurrentSettings((event as CustomEvent<typeof currentSettings>).detail);
     const update = (event: Event) => setCurrentClients(clients.slice(0, (event as CustomEvent<number>).detail));
     const renew = () => setCurrentClients((current) => current.map((c, i) => i === 0 ? { ...c, activeLoanId: '00004', transactionNumber: '00004', renewalCount: 1, approvalDate: '2026-11-02', principal: 20000 } : c));
     const remove = (event: Event) => setCurrentClients(current => current.filter(client => !(event as CustomEvent<string[]>).detail.includes(client.id)));
@@ -88,10 +96,11 @@ function Fixture() {
     window.addEventListener('fixture:renew-client', renew);
     window.addEventListener('fixture:payment-updated', correctPayment);
     window.addEventListener('fixture:upsert-client', upsert);
-    return () => { window.removeEventListener('fixture:client-count', update); window.removeEventListener('fixture:renew-client', renew); window.removeEventListener('fixture:remove-clients', remove); window.removeEventListener('fixture:payment-updated', correctPayment); window.removeEventListener('fixture:upsert-client', upsert); };
+    window.addEventListener('fixture:settings-updated', updateSettings);
+    return () => { window.removeEventListener('fixture:settings-updated', updateSettings); window.removeEventListener('fixture:client-count', update); window.removeEventListener('fixture:renew-client', renew); window.removeEventListener('fixture:remove-clients', remove); window.removeEventListener('fixture:payment-updated', correctPayment); window.removeEventListener('fixture:upsert-client', upsert); };
   }, []);
   const state = { clients: currentClients, payments: currentPayments, collectors: [], holidays, rows: buildClientRows(currentClients, currentPayments, new Set(holidays.map((holiday) => holiday.date)), '2026-11-02'), today: '2026-11-02', loading: false, error: null };
-  return <BrowserRouter><AuthContext.Provider value={{ user: fixtureProfile ? { uid: 'admin1' } as User : null, profile: fixtureProfile, status: 'signedIn', accessError: null, signIn: async () => {}, signOut: async () => {} }}><SettingsContext.Provider value={{ settings: fixtureSettings, loading: false, error: null }}><DataContext.Provider value={state}><div className="content" style={{ maxWidth: 1600 }}>{new URLSearchParams(location.search).get('view') === 'renewal-timeline' ? <RenewalTimeline records={[renewalRecord]} /> : isTrash ? <TrashContent data={currentClients.map((client, index) => ({ id: client.id, client, trashId: `version-${client.id}`, deletedAt: new Date(2026, 10, 3, 12, index), deletedByName: "Admin One", status: new URLSearchParams(location.search).has("purging") && index === 0 ? "purging" : "trashed" }))} loading={false} error={null} fresh={!new URLSearchParams(location.search).has("offline")} /> : isSettings ? <SettingsPage /> : isClients ? <ClientsPage /> : isConsolidation ? <LiquidationPage /> : <PrintablesPage />}</div></DataContext.Provider></SettingsContext.Provider></AuthContext.Provider></BrowserRouter>;
+  return <BrowserRouter><AuthContext.Provider value={{ user: fixtureProfile ? { uid: 'admin1' } as User : null, profile: fixtureProfile, status: 'signedIn', accessError: null, signIn: async () => {}, signOut: async () => {} }}><SettingsContext.Provider value={{ settings: currentSettings, loading: false, error: null }}><DataContext.Provider value={state}><div className="content" style={{ maxWidth: 1600 }}>{new URLSearchParams(location.search).get('view') === 'renewal-timeline' ? <RenewalTimeline records={[renewalRecord]} /> : isTrash ? <TrashContent data={currentClients.map((client, index) => ({ id: client.id, client, trashId: `version-${client.id}`, deletedAt: new Date(2026, 10, 3, 12, index), deletedByName: "Admin One", status: new URLSearchParams(location.search).has("purging") && index === 0 ? "purging" : "trashed" }))} loading={false} error={null} fresh={!new URLSearchParams(location.search).has("offline")} /> : isSettings ? <SettingsPage /> : isClients ? <ClientsPage /> : isConsolidation ? <LiquidationPage /> : <PrintStudioPage standalone={new URLSearchParams(location.search).has('fullscreen')} />}</div></DataContext.Provider></SettingsContext.Provider></AuthContext.Provider></BrowserRouter>;
 }
 createRoot(document.getElementById('root')!).render(
   <Fixture />,

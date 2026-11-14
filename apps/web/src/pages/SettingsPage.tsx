@@ -14,6 +14,7 @@ import { useSettings } from '../context/SettingsContext';
 import { describeError } from '../lib/errors';
 import { completeClientRecords } from '../services/clients';
 import { saveSettings } from '../services/settings';
+import { promissoryIdPageError } from '../lib/printables';
 import './workspace-tools.css';
 
 const titles: Record<PrintableKind, string> = { index: 'Index Card', promissory: 'Promissory Note', summary: 'Daily Summary Sheet' };
@@ -25,7 +26,8 @@ const sections = [
   { id: 'schedule', label: 'Loan schedule', icon: 'calendar', description: 'Sunday and due-date counting' },
   { id: 'trash', label: 'Trash & retention', icon: 'trash', description: 'Recovery, cleanup and numbering' },
   { id: 'index', label: 'Index card', icon: 'file', description: 'Lender details and colors' },
-  { id: 'promissory', label: 'Promissory note', icon: 'documents', description: 'Payee and note wording' },
+  { id: 'promissory', label: 'Promissory note', icon: 'documents', description: 'Note wording and ID page' },
+  { id: 'summary', label: 'Daily Summary Sheet', icon: 'wallet', description: 'Clients included in the collection report' },
   { id: 'studio', label: 'Print defaults', icon: 'print', description: 'Paper sizes and page layouts' },
 ] as const;
 
@@ -61,7 +63,7 @@ function SettingsEditor({ saved, unavailable }: { saved: AppSettings; unavailabl
     return () => observer.disconnect();
   }, []);
 
-  function field<K extends 'general' | 'index' | 'promissory'>(group: K, key: keyof AppSettings[K], value: string | number) {
+  function field<K extends 'general' | 'index' | 'promissory'>(group: K, key: keyof AppSettings[K], value: string | number | boolean) {
     setDraft((previous) => ({ ...previous, [group]: { ...previous[group], [key]: value } }));
     setMessage('');
   }
@@ -69,13 +71,13 @@ function SettingsEditor({ saved, unavailable }: { saved: AppSettings; unavailabl
 
   async function save(event: FormEvent) {
     event.preventDefault(); setError(''); setMessage('');
-    const validation = validateSettings(draft);
+    const validation = validateSettings(draft) || promissoryIdPageError(draft.promissory, draft.studio.promissory);
     if (validation) { setError(validation); return; }
     if (!user || changedRemotely) return;
     setBusy(true);
     try {
       await saveSettings(draft, user.uid, JSON.parse(baseline) as AppSettings);
-      setBaseline(JSON.stringify(draft)); setMessage('Settings saved to Firebase. Connected web sessions update automatically.');
+      setBaseline(JSON.stringify(draft)); setMessage('Settings saved. Connected web sessions update automatically.');
     } catch (caught) { setError(describeError(caught)); } finally { setBusy(false); }
   }
   async function complete() {
@@ -204,7 +206,25 @@ function SettingsEditor({ saved, unavailable }: { saved: AppSettings; unavailabl
           <FormField label="Place of execution"><input value={draft.promissory.executionPlace} maxLength={300} onChange={(e) => field('promissory', 'executionPlace', e.target.value)} /></FormField>
         </div>
         <FormField label="Interest and service charge statement" hint="Printed verbatim in the note; this text does not recalculate the loan’s fixed interest."><textarea rows={3} maxLength={1500} value={draft.promissory.interestStatement} onChange={(e) => field('promissory', 'interestStatement', e.target.value)} /></FormField>
-        <p className="muted small">Principal, approval date, borrower, address, term, total in words and daily amount come from the client record. Valid ID, ID number, co-maker and signatures remain blank. The supplied note’s other clauses are retained.</p>
+        <p className="muted small">Borrower, loan and ID details come from the client record. Empty co-maker fields print as N/A. Signatures are completed by hand.</p>
+        <SettingsSwitch label="Include ID placement page" checked={draft.promissory.includeIdPage}
+          description="Add a separate page after each note with a Put your ID here box for the client and co-maker. Off by default."
+          onChange={checked => field('promissory', 'includeIdPage', checked)} />
+        {draft.promissory.includeIdPage && <div className="settings-template">
+          <h2>ID placement layout</h2>
+          <p className="field-hint">Set the printed width and height of each box in millimetres. Both boxes must fit the promissory note paper selected under Print defaults. Sizes are saved with this setting.</p>
+          <div className="form-grid">
+            <FormField label="Client ID box width (mm)"><input type="number" min="10" max="500" step="0.1" value={draft.promissory.clientIdWidthMm} onChange={event => field('promissory', 'clientIdWidthMm', Number(event.target.value))} /></FormField>
+            <FormField label="Client ID box height (mm)"><input type="number" min="10" max="500" step="0.1" value={draft.promissory.clientIdHeightMm} onChange={event => field('promissory', 'clientIdHeightMm', Number(event.target.value))} /></FormField>
+            <FormField label="Co-maker ID box width (mm)"><input type="number" min="10" max="500" step="0.1" value={draft.promissory.coMakerIdWidthMm} onChange={event => field('promissory', 'coMakerIdWidthMm', Number(event.target.value))} /></FormField>
+            <FormField label="Co-maker ID box height (mm)"><input type="number" min="10" max="500" step="0.1" value={draft.promissory.coMakerIdHeightMm} onChange={event => field('promissory', 'coMakerIdHeightMm', Number(event.target.value))} /></FormField>
+          </div>
+        </div>}
+      </fieldset>
+
+      <fieldset id="settings-summary" className="card settings-section" disabled={busy || unavailable}>
+        <legend>Daily Summary Sheet</legend>
+        <SettingsSwitch label="Only show clients with payments" checked={draft.summary.onlyClientsWithPayments} onChange={checked => setDraft(previous => ({ ...previous, summary: { ...previous.summary, onlyClientsWithPayments: checked } }))} description="Save paper by including only clients with payments on the selected collection date, which defaults to today. Turn this off to include clients without payments." />
       </fieldset>
 
       <fieldset id="settings-studio" className="card settings-section" disabled={busy || unavailable}>
@@ -230,7 +250,7 @@ export default function SettingsPage() {
   const { settings, loading, error } = useSettings();
   if (loading) return <LoadingState />;
   return <><PageHeader title="Settings" description="Shared configuration for your lending workspace and document templates." />
-    {error && <p className="alert alert-error" role="alert">Firebase settings are unavailable. {error} Publish the web Firestore rules, then reload this page.</p>}
+    {error && <p className="alert alert-error" role="alert">Settings are unavailable. {error} Please try reloading this page.</p>}
     <SettingsEditor saved={settings} unavailable={!!error} />
   </>;
 }

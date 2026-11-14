@@ -50,7 +50,13 @@ export interface AppSettings {
     payee: string;
     interestStatement: string;
     executionPlace: string;
+    includeIdPage: boolean;
+    clientIdWidthMm: number;
+    clientIdHeightMm: number;
+    coMakerIdWidthMm: number;
+    coMakerIdHeightMm: number;
   };
+  summary: { onlyClientsWithPayments: boolean };
   studio: Record<PrintableKind, PrintLayout>;
 }
 
@@ -73,7 +79,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
     payee: 'CRISTOPHER A. LASARTE',
     interestStatement: 'PHP 150.00 per thousand and PHP 20.00 service charge per thousand',
     executionPlace: 'Compostela, Davao de Oro, and Philippines',
+    includeIdPage: false,
+    clientIdWidthMm: 85.6,
+    clientIdHeightMm: 54,
+    coMakerIdWidthMm: 85.6,
+    coMakerIdHeightMm: 54,
   },
+  summary: { onlyClientsWithPayments: true },
   studio: {
     // Standard paper uses its physical dimensions in paperDimensions. Keep the
     // original workbook dimensions for an explicitly selected Template size.
@@ -110,6 +122,10 @@ export function validateSettings(settings: AppSettings): string | null {
   if (![general.recentPaymentsLimit, general.dueClientsLimit].every((n) => Number.isInteger(n) && n >= 1 && n <= 100)) return 'Dashboard limits must be between 1 and 100.';
   if (typeof settings.payments.enforceDailyMinimum !== 'boolean') return 'Choose whether to enforce the collector daily minimum.';
   if (typeof settings.schedule.skipSundays !== 'boolean') return 'Choose whether to skip Sundays when counting loan days.';
+  if (typeof promissory.includeIdPage !== 'boolean') return 'Choose whether to include the ID placement page.';
+  if (typeof settings.summary?.onlyClientsWithPayments !== 'boolean') return 'Choose whether the daily summary only includes clients with payments.';
+  if ([promissory.clientIdWidthMm, promissory.clientIdHeightMm, promissory.coMakerIdWidthMm, promissory.coMakerIdHeightMm]
+    .some(value => !Number.isFinite(value) || value < 10 || value > 500)) return 'ID box dimensions must be between 10 and 500 mm.';
   if ([general.businessName, general.defaultPaymentNote, index.businessName, index.branch, index.mobile, promissory.payee, promissory.executionPlace, promissory.interestStatement].some((s) => !s.trim() || s.length > 1500)) return 'Complete all text settings (maximum 1,500 characters per field).';
   if (![index.headingColor, index.cellColor].every((s) => /^#[\da-f]{6}$/i.test(s))) return 'Choose valid template colors.';
   if (!['principal', 'total'].includes(index.amountBasis)) return 'Choose the index amount basis.';
@@ -120,7 +136,7 @@ export function validateSettings(settings: AppSettings): string | null {
 /** Accept only known, correctly typed fields from shared Firestore documents. */
 export function mergeSettings(raw: Record<string, unknown>): AppSettings {
   const result = structuredClone(DEFAULT_SETTINGS);
-  for (const key of ['identifiers', 'consolidationMetrics', 'accounting', 'general', 'payments', 'trash', 'schedule', 'index', 'promissory', 'studio'] as const) {
+  for (const key of ['identifiers', 'consolidationMetrics', 'accounting', 'general', 'payments', 'trash', 'schedule', 'index', 'promissory', 'summary', 'studio'] as const) {
     const source = raw[key];
     if (!source || typeof source !== 'object') continue;
     if (key === 'studio') {
