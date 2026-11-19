@@ -226,9 +226,11 @@ publishing the updated web build. Android files remain unchanged.
 - Consolidation **Net Income** sums `payableAmount − principal` for matched current
   loans. This is contracted interest before expenses and collection, not realized net
   profit. Date windows affect payments and balances, not the full contracted interest.
-- Print Studio defaults to **A4** for index cards, promissory notes and daily summaries.
-  Untouched former template defaults migrate to A4; saved customized layouts remain
-  intact. Reset print options restores the saved layout for the selected document.
+- Print Studio uses **8½ × 13-inch portrait velum** for index cards, with up to three
+  cards per sheet and partial one-/two-card selections. Index cards and the promissory
+  opening show `client/co-maker`, falling back to the client name when blank.
+  Promissory notes and daily summaries retain A4 defaults and saved paper choices.
+  Reset print options restores the saved options for the selected document.
 - The daily-payable minimum is optional and applies to collector receipts. Web admins
   may enter smaller partial/final settlements. The prepared rules must be published
   to enforce this in Android; its UI remains unchanged. See the Android context above.

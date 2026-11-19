@@ -27,7 +27,7 @@ async function upload(page: Page, signature = false, name = signature ? 'signatu
 test('each printable has independent typography, layout, view options and undo history', async ({ page }) => {
   await page.goto('/tests/fixtures/print-studio.html');
   await page.getByLabel('Font family', { exact: true }).selectOption('Georgia');
-  await page.getByLabel('Paper size', { exact: true }).selectOption('letter');
+  await page.getByLabel('Margin (mm)', { exact: true }).fill('3');
   await page.getByRole('tab', { name: 'Promissory Note', exact: true }).click();
   await expect(page.getByLabel('Font family', { exact: true })).toHaveValue('Template font');
   await expect(page.getByLabel('Paper size', { exact: true })).toHaveValue('a4');
@@ -38,7 +38,8 @@ test('each printable has independent typography, layout, view options and undo h
   await expect(page.getByLabel('Font family', { exact: true })).toHaveValue('Arial');
   await page.getByRole('tab', { name: 'Index Card', exact: true }).click();
   await expect(page.getByLabel('Font family', { exact: true })).toHaveValue('Georgia');
-  await expect(page.getByLabel('Paper size', { exact: true })).toHaveValue('letter');
+  await expect(page.getByLabel('Margin (mm)', { exact: true })).toHaveValue('3');
+  await expect(page.getByLabel('Paper size', { exact: true })).toHaveValue(/Velum.*8½.*13/);
   await page.getByLabel('Zoom', { exact: true }).selectOption('50');
   await page.getByRole('tab', { name: 'Daily Summary Sheet', exact: true }).click();
   await expect(page.getByLabel('Zoom', { exact: true })).toHaveValue('75');
@@ -49,7 +50,7 @@ test('each printable has independent typography, layout, view options and undo h
   await expect(page.locator('.studio-workspace')).toHaveClass(/with-grid/);
   await page.reload();
   await expect(page.getByLabel('Font family', { exact: true })).toHaveValue('Template font');
-  await expect(page.getByLabel('Paper size', { exact: true })).toHaveValue('a4');
+  await expect(page.getByLabel('Paper size', { exact: true })).toHaveValue(/Velum.*8½.*13/);
 });
 
 test('ID images and signatures move, resize, rotate and export at their print positions', async ({ page, context }) => {

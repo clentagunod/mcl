@@ -1,6 +1,9 @@
 import { DEFAULT_CONSOLIDATION_METRICS, OPTIONAL_CONSOLIDATION_METRICS, type ConsolidationMetricVisibility } from './consolidation-metrics';
 
 export type PrintableKind = 'index' | 'promissory' | 'summary';
+/** Fixed portrait velum sheet used by all index-card output (8.5 × 13 inches). */
+export const INDEX_PAPER_SIZE = { width: 215.9, height: 330.2 } as const;
+export const INDEX_CARDS_PER_SHEET = 3;
 export type TrashRetentionDays = 0 | 3 | 7 | 30;
 export type PaymentAllocation = 'principalFirst' | 'proportional';
 export interface PrintLayout {
@@ -87,9 +90,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   summary: { onlyClientsWithPayments: true },
   studio: {
-    // Standard paper uses its physical dimensions in paperDimensions. Keep the
-    // original workbook dimensions for an explicitly selected Template size.
-    index: { paper: 'a4', paperDefaultVersion: 2, orientation: 'landscape', widthMm: 238, heightMm: 122, marginMm: 2, fontSize: 11 },
+    // Index cards always use portrait velum; other documents retain paper choices.
+    index: { paper: 'custom', paperDefaultVersion: 2, orientation: 'portrait', widthMm: INDEX_PAPER_SIZE.width, heightMm: INDEX_PAPER_SIZE.height, marginMm: 2, fontSize: 11 },
     promissory: { paper: 'a4', paperDefaultVersion: 2, orientation: 'portrait', widthMm: 210, heightMm: 297, marginMm: 12.7, fontSize: 12 },
     summary: { paper: 'a4', paperDefaultVersion: 2, orientation: 'landscape', widthMm: 297, heightMm: 210, marginMm: 10, fontSize: 9 },
   },

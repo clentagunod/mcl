@@ -1,11 +1,11 @@
-import type { AppSettings, PrintLayout, PrintableKind } from '../config/settings';
+import { INDEX_CARDS_PER_SHEET, type AppSettings, type PrintLayout, type PrintableKind } from '../config/settings';
 import type { Client, Holiday, Payment } from '../types';
 import noteTemplate from '../templates/promissory.html?raw';
 import printStyles from '../print.css?raw';
 import { formatDate } from './dates';
 import { computeSchedule } from './loan';
 import { round2, sumAmounts } from './money';
-import { dailyPayable, dailySummary, fullClientName, indexEntries, paperDimensions, promissoryIdPageError, promissoryIdSlots, promissoryValues, publicClientId, summaryClientName, summaryClients, type SummaryEntry } from './printables';
+import { dailyPayable, dailySummary, printablePartyNames, indexEntries, paperDimensions, promissoryIdPageError, promissoryIdSlots, promissoryValues, publicClientId, summaryClientName, summaryClients, type SummaryEntry } from './printables';
 import { boundImage, DEFAULT_PRESENTATION, imageStyle, isPrintImageData, type PrintImage, type PrintPresentation } from './print-studio';
 
 export interface PrintJob {
@@ -37,7 +37,7 @@ export function indexCardPages(client: Client, payments: readonly Payment[]): { 
 function indexCards(job: PrintJob): string[] {
   const { index } = job.settings;
   const holidays = new Set(job.holidays.map((holiday) => holiday.date));
-  return job.clients.flatMap((client) => {
+  const cards = job.clients.flatMap((client) => {
     const entries = indexEntries(client, job.payments);
     const pages = indexCardPages(client, job.payments);
     const { dueDate } = computeSchedule(client.approvalDate, client.loanTermDays, holidays, job.date, undefined, job.settings.schedule.skipSundays);
@@ -49,16 +49,18 @@ function indexCards(job: PrintJob): string[] {
         return `<td><div class="index-entry"><b>${day}.</b><span>${entry ? printMoney(entry.amount) : ''}</span><span>${entry ? escapeHtml(formatDate(entry.date)) : ''}</span><span class="signature-line" aria-label="Signature (blank)"></span></div></td>`;
       }).join('')}</tr>`).join('');
       const amount = index.amountBasis === 'principal' ? client.principal : round2(client.principal + client.interest);
-      return `<section class="sheet index-sheet"><div class="sheet-body">
+      return `<section class="index-card" data-client-id="${escapeHtml(client.id)}"><div class="index-card-body">
         <header class="index-heading"><img src="${escapeHtml(job.logoUrl)}" alt="MCL Lending logo"><h1>${escapeHtml(index.businessName.toUpperCase())}</h1></header>
         <div class="index-subheading"><i>${escapeHtml(index.branch)}</i><strong>BORROWER’S COPY</strong><strong>MOBILE #: ${escapeHtml(index.mobile)}</strong></div>
-        <div class="index-details"><div>Name: <b>${escapeHtml(fullClientName(client))}</b></div><div>Date: <b>${escapeHtml(formatDate(client.approvalDate))}</b></div><div>Address: <b>${escapeHtml(client.address)}</b></div><div>Amount: <b>${printMoney(amount)}</b></div><div>No. of Days: <b>${client.loanTermDays}</b></div><div>Daily: <b>${printMoney(dailyPayable(client))}</b></div></div>
+        <div class="index-details"><div>Name: <b>${escapeHtml(printablePartyNames(client))}</b></div><div>Date: <b>${escapeHtml(formatDate(client.approvalDate))}</b></div><div>Address: <b>${escapeHtml(client.address)}</b></div><div>Amount: <b>${printMoney(amount)}</b></div><div>No. of Days: <b>${client.loanTermDays}</b></div><div>Daily: <b>${printMoney(dailyPayable(client))}</b></div></div>
         <div class="index-due-date">Due date: <b>${escapeHtml(formatDate(dueDate))}</b></div>
         <div class="index-reference">${escapeHtml(publicClientId(client))} · Transaction ${escapeHtml(client.transactionNumber || 'Pending')} ${pages.length > 1 ? `· Card ${pageIndex + 1}/${pages.length}` : ''}</div>
         <table class="index-grid" aria-label="Sequential paying days"><tbody>${grid}</tbody></table>
       </div></section>`;
     });
   });
+  return Array.from({ length: Math.ceil(cards.length / INDEX_CARDS_PER_SHEET) }, (_, page) =>
+    `<section class="sheet index-sheet"><div class="sheet-body index-cards">${cards.slice(page * INDEX_CARDS_PER_SHEET, (page + 1) * INDEX_CARDS_PER_SHEET).join('')}</div></section>`);
 }
 
 function promissoryNotes(job: PrintJob): string[] {

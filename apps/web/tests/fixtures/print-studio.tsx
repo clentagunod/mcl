@@ -32,12 +32,20 @@ if (new URLSearchParams(location.search).has('term30')) {
   clients[0].loanTermDays = 30;
   clients[0].dailyAmount = 375;
 }
+if (new URLSearchParams(location.search).has('comaker')) {
+  clients[0].coMaker = { name: '  Maria Reyes  ', contactNumber: '' };
+  clients[1].coMaker = { name: ' \t ', contactNumber: '' };
+}
 const payments: Payment[] = [
   { id: 'p1', clientId: clients[0].id, amount: 125, paymentDate: '2026-10-21', collectorId: 'collector1', collectorName: 'Collector One', createdAt: new Date('2026-10-21T08:00:00Z') },
   { id: 'p2', clientId: clients[0].id, amount: 125, paymentDate: '2026-10-21', collectorId: 'collector1', collectorName: 'Collector One', createdAt: new Date('2026-10-21T09:00:00Z') },
   { id: 'p3', clientId: clients[0].id, amount: 500, paymentDate: '2026-11-02', collectorId: 'admin1', collectorName: 'Admin One', notes: 'Two installments', createdAt: new Date('2026-11-02T08:00:00Z') },
   { id: 'p4', clientId: clients[1].id, amount: 250, paymentDate: '2026-11-02', collectorId: 'collector1', collectorName: 'Collector One', createdAt: new Date('2026-11-02T08:00:00Z') },
 ];
+if (new URLSearchParams(location.search).has('largepayment')) {
+  clients[0].principal = 999999999;
+  payments.splice(0, payments.length, { ...payments[0], amount: 987654321.12 });
+}
 const renewalFixture = new URLSearchParams(location.search).get('renewal');
 if (renewalFixture) {
   payments.push({ ...payments[0], id: 'settlement', amount: 10500, paymentDate: '2026-11-02' });
@@ -55,7 +63,8 @@ const renewalRecord: RenewalRecord = {
 const fixtureProfile: UserProfile | null = renewalFixture ? { uid: 'admin1', role: renewalFixture === 'collector' ? 'collector' : renewalFixture === 'developer' ? 'developer' : 'admin', fullName: 'Admin One', email: '', phone: '', active: true, createdAt: null } : null;
 if (new URLSearchParams(location.search).has('latepayments')) {
   clients[2].approvalDate = '2026-07-31';
-  for (let i = 0; i < 60; i += 1) payments.push({ id: `late-${i}`, clientId: clients[2].id, amount: 100, paymentDate: addDays('2026-08-01', i), collectorId: 'collector1', collectorName: 'Collector One', createdAt: null });
+  const payingDays = new URLSearchParams(location.search).has('continuation') ? 62 : 60;
+  for (let i = 0; i < payingDays; i += 1) payments.push({ id: `late-${i}`, clientId: clients[2].id, amount: 100, paymentDate: addDays('2026-08-01', i), collectorId: 'collector1', collectorName: 'Collector One', createdAt: null });
 }
 if (new URLSearchParams(location.search).has('longaddress')) clients[0].address = 'Purok 1, San Miguel, Tagum City. '.repeat(80) + 'X'.repeat(2000);
 const isSettings = new URLSearchParams(location.search).get('view') === 'settings';

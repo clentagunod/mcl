@@ -162,22 +162,24 @@ with a yellow `#f5efa5` heading and theme-accent blue `#a1bfcd` cells. The web t
 preserves that arrangement, proportions, labels and accents, adding the existing
 logo and compact client/transaction references. Signatures remain empty.
 
-The workbook does **not** contain a paper size, orientation or print area. Its column
-widths and occupied row heights yield an approximate 238 × 122 mm baseline for a
-45-day card. Template height grows by 5.08 mm per extra row for 50-/58-day loans.
-The studio defaults to **A4** for index cards, promissory notes and daily summaries.
-Index cards and daily summaries start in landscape; promissory notes start in
-portrait. Untouched former template defaults migrate to A4; explicitly saved Letter,
-Legal, custom dimensions and customized template layouts are preserved. New saved
-paper choices carry `paperDefaultVersion: 2`, so a later explicit Template size
-selection is not migrated again. HTML, PDF/browser printing and generated DOCX use
-the selected document's page dimensions. Reset print options restores its saved layout.
+Index cards use **8½ × 13-inch portrait velum** (215.9 × 330.2 mm), with three equal
+card slots stacked vertically on each physical sheet. Select one client, or enable
+**Bulk printing** and check the desired clients. One or two cards retain the full
+sheet size and leave the unused slots empty. Additional cards, including continuation
+cards, fill the next available slots and then continue onto another velum sheet.
+The compact card layout supports 30-/45-/50-/58-day loans. Preview, browser print/PDF,
+HTML and Word use the same physical sheet dimensions; index Word exports combine
+selected clients into one DOCX to preserve sheet packing.
 
-The studio allows other standard paper sizes and explicit custom dimensions when a
-particular physical card size is required. It does not claim an unspecified physical
-size was copied exactly.
+Index paper size and portrait orientation are fixed, including when old saved index
+layouts specify another paper size. Margin, font and presentation choices remain
+editable. Promissory notes retain A4 portrait defaults and daily summaries retain A4
+landscape defaults, with their existing standard/custom paper controls and saved
+choices. Reset print options restores the current document's saved options.
 
 Name, address, approval date, term and daily amount come from the selected client.
+The Name field appends a trimmed co-maker name using `{client name}/{co-maker name}`.
+A missing, empty or whitespace-only co-maker name leaves only the client's name.
 Every index card, including continuation cards, also shows the automatic due date
 from the same loan schedule used in client loan information. It uses the active
 loan's approval date and term, excludes configured holidays, follows the saved
@@ -218,13 +220,19 @@ Word paragraph/run structure is retained. The revised reference
 removes the old bottom CO-MAKER/DEBTOR identity boxes; neither preview nor export adds
 them back.
 
+The opening **FOR VALUE RECEIVED I/WE** paragraph identifies both parties as
+`{client name}/{co-maker name}` in uppercase; a blank co-maker leaves only the client
+name. The signature and ID sections retain each person's separate name and their
+existing empty-value behavior. This display formatting does not change stored names.
+
 Principal and approval date come from the client. The promised total is principal +
 fixed interest, including centavos in words. Term, borrower, address and saved daily
 amount are populated. Payee, statement and execution place come from settings. Editing
 the statement changes its text only; it does not recalculate the client's fixed interest.
 The sample borrower's ID number, any embedded identity photograph, and Office document
-properties are removed from the reusable assets. Both parties' ID fields,
-co-maker details, issue details, court venue, notary details and signatures remain blank.
+properties are removed from the reusable assets. Each party's saved identity and
+contact details populate its own fields; missing co-maker values display N/A.
+Court venue, notary details and signatures remain blank unless supplied for the print session.
 
 The preparation script is reproducible and reads the original without modifying it:
 
@@ -269,8 +277,9 @@ grand total covers only those selected clients, including in Word exports.
   Match paper size, use 100% scale, enable background graphics and disable browser
   headers/footers. A printer must support the selected custom size for physical cards.
 - DOCX exports are real Office ZIP/XML documents. The note uses its sanitized source
-  document; index and summary exports use native Word tables. Multiple client documents
-  download as a ZIP containing one DOCX per client. Word may reflow content depending on
+  document; index and summary exports use native Word tables. Index cards download in
+  one combined DOCX with three cards per velum sheet. Multiple promissory notes download
+  as a ZIP containing one DOCX per client. Word may reflow content depending on
   installed fonts and pagination; PDF is the consistent preview output.
 - HTML export embeds the logo and all styles for a standalone document with no external
   image dependencies. Files contain the selected client information and ledger values.

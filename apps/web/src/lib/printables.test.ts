@@ -153,9 +153,9 @@ describe('templates and settings', () => {
     expect(() => renderPrintDocument(makeJob({ kind: 'promissory', settings: { ...DEFAULT_SETTINGS, promissory: { ...settings, clientIdWidthMm: 200 } }, layout: DEFAULT_SETTINGS.studio.promissory }))).toThrow('do not fit');
   });
 
-  it.each(['index', 'promissory', 'summary'] as const)('renders the %s default with an actual A4 page for every supported term', (kind: PrintableKind) => {
+  it.each(['index', 'promissory', 'summary'] as const)('renders the %s default with its physical paper size for every supported term', (kind: PrintableKind) => {
     const settings = mergeSettings({});
-    const [width, height] = kind === 'promissory' ? [210, 297] : [297, 210];
+    const [width, height] = kind === 'index' ? [215.9, 330.2] : kind === 'promissory' ? [210, 297] : [297, 210];
     for (const loanTermDays of LOAN_TERMS) {
       const rendered = renderPrintDocument(makeJob({ kind, settings, layout: settings.studio[kind], clients: [{ ...client, loanTermDays }], payments: [receipt('a', 250, '2026-11-02')] }));
       expect(rendered.html).toContain(`@page{size:${width}mm ${height}mm;margin:0}`);
@@ -203,7 +203,8 @@ describe('templates and settings', () => {
     const payments = Array.from({ length: 60 }, (_, i) => receipt(String(i), 1, addDays('2026-11-03', i), { loanId: '00002' }));
     const rendered = renderPrintDocument(makeJob({ clients: [renewed], payments }));
     const dueDate = formatDate(computeSchedule(renewed.approvalDate, renewed.loanTermDays, new Set(), '2026-11-02').dueDate);
-    expect(rendered.pages).toBe(2);
+    expect(rendered.pages).toBe(1);
+    expect(rendered.html.match(/class="index-card"/g)).toHaveLength(2);
     expect(rendered.html.match(new RegExp(`Due date: <b>${dueDate}</b>`, 'g'))).toHaveLength(2);
   });
 
@@ -227,9 +228,10 @@ describe('templates and settings', () => {
     expect(() => mergeSettings({ general: { clientIdPrefix: '../invalid' } })).toThrow();
     expect(validLayout({ ...DEFAULT_SETTINGS.studio.index, fontSize: 9.333 })).toBe(false);
   });
-  it('honors physical paper orientation', () => {
+  it('honors configurable paper orientation and keeps index cards on portrait velum', () => {
     expect(paperDimensions(DEFAULT_SETTINGS.studio.promissory, 'promissory')).toEqual({ width: 210, height: 297 });
-    expect(paperDimensions({ ...DEFAULT_SETTINGS.studio.index, paper: 'letter', orientation: 'landscape' }, 'index')).toEqual({ width: 279.4, height: 215.9 });
+    expect(paperDimensions({ ...DEFAULT_SETTINGS.studio.summary, paper: 'letter', orientation: 'landscape' }, 'summary')).toEqual({ width: 279.4, height: 215.9 });
+    expect(paperDimensions({ ...DEFAULT_SETTINGS.studio.index, paper: 'letter', orientation: 'landscape' }, 'index')).toEqual({ width: 215.9, height: 330.2 });
   });
   it('escapes client content and leaves no template fields unresolved', () => {
     const malicious = { ...client, firstName: '<script>alert(1)</script>' };

@@ -171,7 +171,7 @@ test('batch notes export separately in a ZIP and narrow screen remains usable', 
 test('PDF output has the configured paper sizes and no extra blank pages', async ({ page, context }) => {
   await page.goto('/tests/fixtures/print-studio.html');
   for (const [title, expectedPages, widthPt, heightPt] of [
-    ['Index Card', 1, 297 / 25.4 * 72, 210 / 25.4 * 72],
+    ['Index Card', 1, 612, 936],
     ['Promissory Note', 1, 210 / 25.4 * 72, 297 / 25.4 * 72],
     ['Daily Summary Sheet', 1, 297 / 25.4 * 72, 210 / 25.4 * 72],
   ] as const) {
@@ -179,7 +179,7 @@ test('PDF output has the configured paper sizes and no extra blank pages', async
     await expect(page.getByRole('button', { name: 'Print', exact: true })).toBeEnabled();
     const html = await page.frameLocator('iframe').locator('html').evaluate((node) => node.outerHTML);
     const printPage = await context.newPage();
-    await printPage.setContent(html);
+    await printPage.setContent(`<!doctype html>${html}`);
     await printPage.evaluate(async () => { await document.fonts.ready; await Promise.all([...document.images].map((i) => i.decode())); });
     const bytes = await printPage.pdf({ preferCSSPageSize: true, printBackground: true, path: `.tmp/${title.replaceAll(' ', '-')}.pdf` });
     const pdf = bytes.toString('latin1');
@@ -217,7 +217,8 @@ test('smart search and checked bulk selections persist across documents and expo
   await page.getByRole('checkbox', { name: /Select .*\(mcl0003\)/ }).check();
   await search.fill('no matching client');
   await expect(page.getByText('Your current selection is kept.', { exact: false })).toBeVisible();
-  await expect(page.frameLocator('iframe').locator('.index-sheet')).toHaveCount(2);
+  await expect(page.frameLocator('iframe').locator('.index-sheet')).toHaveCount(1);
+  await expect(page.frameLocator('iframe').locator('.index-card')).toHaveCount(2);
   await page.getByRole('tab', { name: 'Promissory Note' }).click();
   await expect(page.frameLocator('iframe').locator('.promissory-sheet')).toHaveCount(2);
   const pending = page.waitForEvent('download');

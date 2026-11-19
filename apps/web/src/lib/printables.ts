@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, type AppSettings, type PrintLayout, type PrintableKind } from '../config/settings';
+import { DEFAULT_SETTINGS, INDEX_PAPER_SIZE, type AppSettings, type PrintLayout, type PrintableKind } from '../config/settings';
 import type { Client, Payment } from '../types';
 import { formatDate, isISODate } from './dates';
 import { round2, sumAmounts } from './money';
@@ -12,6 +12,12 @@ export function dailyPayable(client: Pick<Client, 'principal' | 'interest' | 'da
 }
 
 export const fullClientName = (client: Client) => [client.firstName, client.middleName, client.lastName].filter(Boolean).join(' ');
+/** Display both parties only where the document identifies the joint borrowers. */
+export function printablePartyNames(client: Client): string {
+  const borrower = fullClientName(client);
+  const coMaker = client.coMaker?.name?.trim();
+  return coMaker ? `${borrower}/${coMaker}` : borrower;
+}
 export const summaryClientName = (client: Client) => `${client.lastName}, ${client.firstName}${client.middleName ? ` ${client.middleName}` : ''}`;
 export const publicClientId = (client: Client) => client.clientNumber || client.id;
 
@@ -76,10 +82,11 @@ export function dailySummary(clients: readonly Client[], payments: readonly Paym
   });
 }
 
-export function paperDimensions(layout: PrintLayout, kind: PrintableKind, indexTermDays = 45): { width: number; height: number } {
+export function paperDimensions(layout: PrintLayout, kind: PrintableKind, _indexTermDays = 45): { width: number; height: number } {
+  if (kind === 'index') return { ...INDEX_PAPER_SIZE };
   const sizes = { a4: [210, 297], letter: [215.9, 279.4], legal: [215.9, 355.6] };
   const base = layout.paper === 'template'
-    ? [DEFAULT_SETTINGS.studio[kind].widthMm, DEFAULT_SETTINGS.studio[kind].heightMm + (kind === 'index' ? Math.max(0, Math.ceil(indexTermDays / 4) - 12) * 5.08 : 0)]
+    ? [DEFAULT_SETTINGS.studio[kind].widthMm, DEFAULT_SETTINGS.studio[kind].heightMm]
     : layout.paper === 'custom' ? [layout.widthMm, layout.heightMm] : sizes[layout.paper];
   const [small, large] = [...base].sort((a, b) => a - b);
   return layout.orientation === 'landscape' ? { width: large, height: small } : { width: small, height: large };
@@ -122,7 +129,9 @@ export function promissoryValues(client: Client, settings: AppSettings): Record<
   const note = client.promissoryNote;
   return {
     principal: money(client.principal), approvalDate: longDate,
-    borrower: fullClientName(client).toUpperCase(), address: client.address.toUpperCase(),
+    borrower: fullClientName(client).toUpperCase(),
+    borrowerAndCoMaker: printablePartyNames(client).toUpperCase(),
+    address: client.address.toUpperCase(),
     payee: note?.payee?.trim() || settings.promissory.payee, amountWords: pesoWords(round2(client.principal + client.interest)),
     total: money(round2(client.principal + client.interest)), term: String(client.loanTermDays),
     interestStatement: note?.interestStatement?.trim() || settings.promissory.interestStatement, dailyAmount: money(dailyPayable(client)),

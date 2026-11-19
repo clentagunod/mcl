@@ -2,23 +2,29 @@ import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { strFromU8, unzipSync } from 'fflate';
 
-test('all document defaults and reset options produce A4 Word and standalone HTML exports', async ({ page }) => {
+test('document defaults and reset options preserve physical paper sizes in Word and HTML', async ({ page }) => {
   // Exercise local fixture contexts and exported files without contacting Firebase.
   await page.route(/https:\/\/.*(?:googleapis\.com|firebaseio\.com)/, route => route.abort());
   await page.goto('/tests/fixtures/print-studio.html?term30=1');
 
   for (const [title, width, height, orientation] of [
-    ['Index Card', 297, 210, 'landscape'],
+    ['Index Card', 215.9, 330.2, 'portrait'],
     ['Promissory Note', 210, 297, 'portrait'],
     ['Daily Summary Sheet', 297, 210, 'landscape'],
   ] as const) {
     await page.getByRole('tab', { name: title, exact: true }).click();
     const paper = page.getByLabel('Paper size', { exact: true });
-    await expect(paper).toHaveValue('a4');
-    await paper.selectOption('letter');
-    await expect(paper).toHaveValue('letter');
+    if (title === 'Index Card') {
+      await expect(paper).toHaveValue(/Velum.*8½.*13/);
+      await expect(paper).toHaveAttribute('readonly', '');
+      await page.getByLabel('Margin (mm)', { exact: true }).fill('3');
+    } else {
+      await expect(paper).toHaveValue('a4');
+      await paper.selectOption('letter');
+      await expect(paper).toHaveValue('letter');
+    }
     await page.getByRole('button', { name: 'Reset print options', exact: true }).click();
-    await expect(paper).toHaveValue('a4');
+    await expect(paper).toHaveValue(title === 'Index Card' ? /Velum.*8½.*13/ : 'a4');
     await expect(page.getByRole('button', { name: 'Print', exact: true })).toBeEnabled();
 
     const pendingWord = page.waitForEvent('download');

@@ -1,13 +1,16 @@
-import type { PrintLayout } from '../config/settings';
+import type { PrintLayout, PrintableKind } from '../config/settings';
 import { FormField } from './FormField';
 
-export function PrintLayoutFields({ value, onChange }: { value: PrintLayout; onChange: (value: PrintLayout) => void }) {
+export function PrintLayoutFields({ value, onChange, kind }: { value: PrintLayout; onChange: (value: PrintLayout) => void; kind?: PrintableKind }) {
   function numeric(field: 'widthMm' | 'heightMm' | 'marginMm' | 'fontSize') {
     return { value: value[field], onChange: (event: { target: { value: string } }) => onChange({ ...value, [field]: Number(event.target.value) }) };
   }
   return (
-    <div className="form-grid print-layout-fields">
-      <FormField label="Paper size">
+    <div className={`form-grid print-layout-fields${kind === 'index' ? ' print-layout-fields-index' : ''}`}>
+      {kind === 'index' ? <>
+        <FormField label="Paper size"><input value="Velum — 8½ × 13 inches" readOnly /></FormField>
+        <FormField label="Orientation"><input value="Portrait" readOnly /></FormField>
+      </> : <><FormField label="Paper size">
         <select value={value.paper} onChange={(event) => onChange({ ...value, paper: event.target.value as PrintLayout['paper'] })}>
           <option value="template">Template size</option><option value="a4">A4</option><option value="letter">Letter</option><option value="legal">Legal</option><option value="custom">Custom</option>
         </select>
@@ -20,7 +23,7 @@ export function PrintLayoutFields({ value, onChange }: { value: PrintLayout; onC
       {value.paper === 'custom' && <>
         <FormField label="Width (mm)"><input type="number" min="70" max="600" step="0.1" {...numeric('widthMm')} /></FormField>
         <FormField label="Height (mm)"><input type="number" min="70" max="600" step="0.1" {...numeric('heightMm')} /></FormField>
-      </>}
+      </>}</>}
       <FormField label="Margin (mm)"><input type="number" min="0" max="30" step="0.1" {...numeric('marginMm')} /></FormField>
       <FormField label="Font size (pt)"><input type="number" min="6" max="18" step="0.5" {...numeric('fontSize')} /></FormField>
     </div>

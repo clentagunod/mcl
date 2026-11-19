@@ -139,7 +139,7 @@ describe('client allocations', () => {
 });
 
 describe('shared settings persistence', () => {
-  it('persists migrated A4 defaults and retains later explicit paper choices across reloads', async () => {
+  it('persists migrated note defaults and retains explicit paper choices across reloads', async () => {
     const studioPath = 'settings/Printables/elements/studio';
     const legacyStudio = Object.fromEntries(Object.entries(DEFAULT_SETTINGS.studio).map(([kind, saved]) => {
       const { paperDefaultVersion: _version, ...layout } = saved;
@@ -148,7 +148,9 @@ describe('shared settings persistence', () => {
     fake.documents.set(studioPath, legacyStudio);
     await initializeSettings('admin');
     const migrated = mergeSettings({ studio: fake.documents.get(studioPath) });
-    expect(Object.values(migrated.studio).every(layout => layout.paper === 'a4')).toBe(true);
+    expect(migrated.studio.promissory.paper).toBe('a4');
+    expect(migrated.studio.summary.paper).toBe('a4');
+    expect(migrated.studio.index.paper).toBe('template');
     await saveSettings(migrated, 'admin', migrated);
     await initializeSettings('admin');
     let reloaded = mergeSettings({ studio: fake.documents.get(studioPath) });

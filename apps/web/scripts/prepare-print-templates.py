@@ -64,6 +64,8 @@ replacements = {
 }
 for old, new in replacements.items():
     xml = substitute(xml, old, new)
+# Only the opening promise names both parties; the signature remains borrower-only.
+xml = xml.replace('{{borrower}}', '{{borrowerAndCoMaker}}', 1)
 xml = substitute(xml, 'ACKNOWLEDGEMEN', 'ACKNOWLEDGEMENT')
 assert xml.count('<w:t>____________</w:t>') == 1
 xml = xml.replace('<w:t>____________</w:t>', '<w:t>{{cellphone}}</w:t>')

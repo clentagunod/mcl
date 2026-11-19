@@ -1,6 +1,7 @@
-import { AlignmentType, Document, HeightRule, ImageRun, Packer, PageOrientation, Paragraph, Table, TableCell, TableRow, TextRun, WidthType, type FileChild } from 'docx';
+import { AlignmentType, BorderStyle, Document, HeightRule, ImageRun, Packer, PageOrientation, Paragraph, Table, TableCell, TableLayoutType, TableRow, TextRun, WidthType, type FileChild } from 'docx';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import noteTemplateUrl from '../templates/promissory.docx?url';
+import { INDEX_CARDS_PER_SHEET } from '../config/settings';
 import type { Client } from '../types';
 import { escapeHtml, renderPrintDocument, type PrintJob } from './print-renderer';
 import { paperDimensions, promissoryIdPageError, promissoryIdSlots, promissoryValues, publicClientId } from './printables';
@@ -107,7 +108,7 @@ function idPlacementPageXml(job: PrintJob, client: Client): string {
 async function tableDocument(job: PrintJob, logo: Uint8Array): Promise<Uint8Array> {
   const parsed = new DOMParser().parseFromString(renderPrintDocument(job).html, 'text/html');
   const size = paperDimensions(job.layout, job.kind, Math.max(45, ...job.clients.map((c) => c.loanTermDays)));
-  const font = job.layout.fontSize;
+  const font = job.layout.fontSize * (job.kind === 'index' ? .82 : 1);
   const presentation = job.presentation ?? DEFAULT_PRESENTATION;
   const paragraph = (text: string, bold = false, centered = false, fill?: string, small = false) => new Paragraph({
     children: [new TextRun({ text, bold, font: presentation.font === 'Template font' ? job.kind === 'index' ? 'Aptos Narrow' : 'Calibri' : presentation.font, size: Math.round(font * (small ? 1.65 : 2)) })],
@@ -121,7 +122,7 @@ async function tableDocument(job: PrintJob, logo: Uint8Array): Promise<Uint8Arra
       let column = 0;
       return new TableRow({
         tableHeader: row.parentElement?.tagName === 'THEAD',
-        cantSplit: true, height: { value: mmToTwip(5.08), rule: HeightRule.ATLEAST },
+        cantSplit: true, height: { value: mmToTwip(job.kind === 'index' ? 3.3 : 5.08), rule: HeightRule.ATLEAST },
         children: [...row.cells].map((cell) => {
           const cellWidth = widths.slice(column, column + cell.colSpan).reduce((a, b) => a + b, 0);
           column += cell.colSpan;
@@ -133,49 +134,100 @@ async function tableDocument(job: PrintJob, logo: Uint8Array): Promise<Uint8Arra
             columnSpan: cell.colSpan > 1 ? cell.colSpan : undefined,
             width: { size: cellWidth, type: WidthType.PERCENTAGE },
             shading: fill ? { fill } : undefined,
-            margins: { top: 30, bottom: 30, left: 40, right: 40 },
+            margins: { top: job.kind === 'index' ? 10 : 30, bottom: job.kind === 'index' ? 10 : 30, left: 40, right: 40 },
           });
         }),
       });
     });
     return new Table({ rows, width: { size: 100, type: WidthType.PERCENTAGE } });
   }
-  const sections = [...parsed.querySelectorAll('.sheet')].map((sheet) => {
-    const children: FileChild[] = presentation.hideLogo ? [] : [new Paragraph({ alignment: AlignmentType.CENTER, children: [new ImageRun({ type: 'png', data: logo, transformation: { width: 30, height: 30 } })], spacing: { after: 20 } })];
-    const body = sheet.querySelector('.sheet-body')!;
-    for (const element of body.children) {
+  const borderless = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
+  const noBorders = { top: borderless, bottom: borderless, left: borderless, right: borderless, insideHorizontal: borderless, insideVertical: borderless };
+  // Word requires a paragraph after a nested table. Keep that required paragraph
+  // small so it does not create an additional page after a full three-card sheet.
+  const spacer = () => new Paragraph({ children: [new TextRun({ text: '', size: 2 })], spacing: { before: 0, after: 0, line: 20 } });
+  function indexCard(card: Element): (Paragraph | Table)[] {
+    const children: (Paragraph | Table)[] = [];
+    for (const element of card.children) {
       if (element.tagName === 'TABLE') children.push(table(element as HTMLTableElement));
-      else if (element.classList.contains('index-heading')) children.push(paragraph(element.textContent || '', true, true, job.settings.index.headingColor));
-      else if (element.classList.contains('index-details')) {
+      else if (element.classList.contains('index-heading')) {
+        const heading = new Paragraph({
+          alignment: AlignmentType.CENTER,
+          children: [
+            ...(presentation.hideLogo ? [] : [new ImageRun({ type: 'png', data: logo, transformation: { width: 18, height: 18 } })]),
+            new TextRun({ text: `  ${element.textContent || ''}`, bold: true, size: Math.round(font * 2.9), font: presentation.font === 'Template font' ? 'Aptos Narrow' : presentation.font }),
+          ],
+          spacing: { before: 0, after: 0 },
+        });
+        children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [new TableRow({ cantSplit: true, children: [new TableCell({ children: [heading], shading: { fill: job.settings.index.headingColor.slice(1) }, margins: { top: 20, bottom: 20, left: 20, right: 20 } })] })] }));
+        children.push(spacer());
+      } else if (element.classList.contains('index-details')) {
         const cells = [...element.children];
-        children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [0, 2, 4].map((i) => new TableRow({ children: [0, 1].map((j) => new TableCell({ children: [paragraph(cells[i + j].textContent || '', true, false, undefined, true)], width: { size: j ? 25 : 75, type: WidthType.PERCENTAGE } })) })) }));
-      } else if (element.classList.contains('summary-heading')) {
+        children.push(new Table({
+          width: { size: 100, type: WidthType.PERCENTAGE }, borders: noBorders, layout: TableLayoutType.FIXED,
+          rows: [0, 2, 4].map(i => new TableRow({ cantSplit: true, children: [0, 1].map(j => new TableCell({
+            children: [paragraph(cells[i + j].textContent || '', true, false, undefined, true)],
+            width: { size: j ? 25 : 75, type: WidthType.PERCENTAGE },
+            margins: { top: 10, bottom: 10, left: 20, right: 20 },
+          })) })),
+        }));
+        children.push(spacer());
+      } else if (element.classList.contains('index-subheading')) {
+        for (const line of element.children) children.push(paragraph(line.textContent || '', true, true, undefined, true));
+      } else children.push(paragraph(element.textContent || '', false, false, undefined, true));
+    }
+    children.push(spacer());
+    return children;
+  }
+  const sections = [...parsed.querySelectorAll('.sheet')].map((sheet) => {
+    const children: FileChild[] = presentation.hideLogo || job.kind === 'index' ? [] : [new Paragraph({ alignment: AlignmentType.CENTER, children: [new ImageRun({ type: 'png', data: logo, transformation: { width: 30, height: 30 } })], spacing: { after: 20 } })];
+    const body = sheet.querySelector('.sheet-body')!;
+    if (job.kind === 'index') {
+      // A single table holds up to three independent, unsplittable card slots.
+      // Reserve 1 mm for Word's paragraph after the outer table. Minimum heights
+      // let Word retain unusually long content instead of clipping client data.
+      const slotHeight = Math.floor(mmToTwip(size.height - 2 * job.layout.marginMm - 1) / INDEX_CARDS_PER_SHEET);
+      children.push(new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE }, borders: noBorders, layout: TableLayoutType.FIXED,
+        rows: [...body.querySelectorAll('.index-card')].map(card => new TableRow({
+          cantSplit: true, height: { value: slotHeight, rule: HeightRule.ATLEAST },
+          children: [new TableCell({ children: indexCard(card.querySelector('.index-card-body')!), margins: { top: 0, bottom: 0, left: 0, right: 0 } })],
+        })),
+      }));
+      children.push(spacer());
+    } else for (const element of body.children) {
+      if (element.tagName === 'TABLE') children.push(table(element as HTMLTableElement));
+      else if (element.classList.contains('summary-heading')) {
         children.push(paragraph(element.querySelector('h1')?.textContent || '', true, true));
         children.push(paragraph(element.querySelector('p')?.textContent || '', false, true));
         children.push(paragraph(element.querySelector('.summary-scope')?.textContent || '', false, true));
         children.push(paragraph(element.querySelector('.summary-meta')?.textContent || '', false, true));
-      } else if (element.classList.contains('index-subheading')) {
-        for (const line of element.children) children.push(paragraph(line.textContent || '', true, true));
       } else children.push(paragraph(element.textContent || '', false, false, undefined, true));
     }
     const margin = mmToTwip(job.layout.marginMm);
     return {
-      properties: { page: { size: { width: mmToTwip(Math.min(size.width, size.height)), height: mmToTwip(Math.max(size.width, size.height)), orientation: job.layout.orientation === 'landscape' ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT }, margin: { top: margin, bottom: margin, left: margin, right: margin } } },
+      properties: { page: { size: { width: mmToTwip(Math.min(size.width, size.height)), height: mmToTwip(Math.max(size.width, size.height)), orientation: job.kind !== 'index' && job.layout.orientation === 'landscape' ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT }, margin: { top: margin, bottom: margin, left: margin, right: margin } } },
       children,
     };
   });
-  const doc = new Document({ creator: 'MCL Lending', title: job.kind, sections });
+  const doc = new Document({
+    creator: 'MCL Lending', title: job.kind, sections,
+    // Empty section-break paragraphs also need to fit after a full index sheet.
+    // Visible text sets its font size explicitly above.
+    styles: job.kind === 'index' ? { default: { document: { run: { size: 2 }, paragraph: { spacing: { before: 0, after: 0 } } } } } : undefined,
+  });
   return new Uint8Array(await (await Packer.toBlob(doc)).arrayBuffer());
 }
 
 export async function exportDocx(job: PrintJob): Promise<void> {
+  if (job.kind !== 'summary' && !job.clients.length) throw new Error('Select at least one client.');
   const logo = await fetchBytes(job.logoUrl);
   const noteTemplate = job.kind === 'promissory' ? await fetchBytes(noteTemplateUrl) : null;
   const files: Record<string, Uint8Array> = {};
-  const selected = job.kind === 'summary' ? [null] : job.clients;
-  if (!selected.length) throw new Error('Select at least one client.');
+  const selected: readonly (Client | null)[] = job.kind === 'promissory' ? job.clients : [null];
   for (const client of selected) {
-    const name = safeFilename(`${job.kind}-${client ? publicClientId(client) : job.date}`) + '.docx';
+    const identifier = client ? publicClientId(client) : job.kind === 'index' && job.clients.length === 1 ? publicClientId(job.clients[0]) : job.date;
+    const name = safeFilename(`${job.kind}-${identifier}`) + '.docx';
     files[name] = noteTemplate && client ? originalNote(job, client, logo, noteTemplate) : await tableDocument({ ...job, clients: client ? [client] : job.clients }, logo);
   }
   const names = Object.keys(files);

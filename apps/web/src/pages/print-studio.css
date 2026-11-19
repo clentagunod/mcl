@@ -42,6 +42,7 @@
 .editor-ribbon .field label { font-size: .64rem; margin: 0 0 .25rem; color: var(--muted); font-weight: 500; }
 .editor-ribbon select, .editor-ribbon input { padding: .35rem .45rem; height: 31px; border-radius: 4px; font-size: .71rem; }
 .editor-ribbon .print-layout-fields { display: grid; grid-template-columns: repeat(4, 91px); gap: .5rem; }
+.editor-ribbon .print-layout-fields-index { grid-template-columns: 175px repeat(3, 91px); }
 .ribbon-font-fields { display: grid; grid-template-columns: 140px; gap: .5rem; }
 .ribbon-font-fields:has(.field:nth-child(2)) { grid-template-columns: 140px 125px; }
 .ribbon-document-tools .ribbon-group-content { display: grid; gap: .3rem; }

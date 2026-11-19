@@ -230,8 +230,8 @@ function SettingsEditor({ saved, unavailable }: { saved: AppSettings; unavailabl
       <fieldset id="settings-studio" className="card settings-section" disabled={busy || unavailable}>
         <legend>Print defaults</legend>
         <p className="settings-section-intro">Choose the starting page layout for each document. You can adjust individual print jobs in the studio.</p>
-        {(Object.keys(titles) as PrintableKind[]).map((kind) => <div key={kind} className="settings-template"><h2>{titles[kind]}</h2><PrintLayoutFields value={draft.studio[kind]} onChange={(layout) => setDraft((previous) => ({ ...previous, studio: { ...previous.studio, [kind]: layout } }))} /></div>)}
-        <p className="muted small">All documents default to A4; explicit saved paper choices are preserved. Template size keeps the index workbook’s approximate 238 × 122 mm proportions for 45 days and grows for longer terms. The note uses its original A4 size and 12.7 mm margins. Studio overrides apply to the current session; these saved defaults apply across sessions.</p>
+        {(Object.keys(titles) as PrintableKind[]).map((kind) => <div key={kind} className="settings-template"><h2>{titles[kind]}</h2><PrintLayoutFields kind={kind} value={draft.studio[kind]} onChange={(layout) => setDraft((previous) => ({ ...previous, studio: { ...previous.studio, [kind]: layout } }))} /></div>)}
+        <p className="muted small">Index cards use 8½ × 13-inch portrait velum with up to three cards per sheet. Promissory notes and daily summaries default to A4 and retain their saved paper choices. The note starts with 12.7 mm margins. Studio overrides apply to the current session; these saved defaults apply across sessions.</p>
       </fieldset>
       {error && <p className="alert alert-error" role="alert">{error}</p>}
       {message && <p className="alert alert-success" role="status">{message}</p>}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, mergeSettings, validLayout, validateSettings, type PrintableKind } from './settings';
+import { DEFAULT_SETTINGS, INDEX_PAPER_SIZE, mergeSettings, validLayout, validateSettings, type PrintableKind } from './settings';
 import { paperDimensions } from '../lib/printables';
 
 describe('identifier reset policy', () => {
@@ -74,17 +74,18 @@ describe('loan schedule settings', () => {
   });
 });
 
-describe('A4 print defaults and saved paper choices', () => {
+describe('print defaults and saved paper choices', () => {
   const kinds: PrintableKind[] = ['index', 'promissory', 'summary'];
-  it.each(kinds)('defaults %s to physical A4 dimensions', kind => {
+  it.each(kinds)('defaults %s to its physical paper dimensions', kind => {
     const layout = mergeSettings({}).studio[kind];
-    expect(layout.paper).toBe('a4');
+    expect(layout.paper).toBe(kind === 'index' ? 'custom' : 'a4');
     expect(layout.paperDefaultVersion).toBe(2);
-    expect(paperDimensions(layout, kind)).toEqual(kind === 'promissory' ? { width: 210, height: 297 } : { width: 297, height: 210 });
+    expect(paperDimensions(layout, kind)).toEqual(kind === 'index' ? INDEX_PAPER_SIZE : kind === 'promissory' ? { width: 210, height: 297 } : { width: 297, height: 210 });
   });
 
   it.each(['index', 'promissory'] as const)('migrates only the exact legacy %s template default', kind => {
-    const { paperDefaultVersion: _version, ...layout } = DEFAULT_SETTINGS.studio[kind];
+    const { paperDefaultVersion: _version, ...defaultLayout } = DEFAULT_SETTINGS.studio[kind];
+    const layout = kind === 'index' ? { ...defaultLayout, orientation: 'landscape' as const, widthMm: 238, heightMm: 122 } : defaultLayout;
     expect(mergeSettings({ studio: { [kind]: { ...layout, paper: 'template' } } }).studio[kind].paper).toBe('a4');
     const customized = mergeSettings({ studio: { [kind]: { ...layout, paper: 'template', marginMm: layout.marginMm + 1 } } }).studio[kind];
     expect(customized).toMatchObject({ paper: 'template', marginMm: layout.marginMm + 1, paperDefaultVersion: 2 });
@@ -99,11 +100,12 @@ describe('A4 print defaults and saved paper choices', () => {
     }
   });
 
-  it('preserves an intentional new template selection matching the old default', () => {
+  it('keeps saved index choices compatible while printing on fixed portrait velum', () => {
     const saved = { ...DEFAULT_SETTINGS.studio.index, paper: 'template' as const };
     const merged = mergeSettings({ studio: { index: saved } });
     expect(merged.studio.index).toEqual(saved);
-    expect(paperDimensions(merged.studio.index, 'index')).toEqual({ width: 238, height: 122 });
+    expect(paperDimensions(merged.studio.index, 'index')).toEqual(INDEX_PAPER_SIZE);
+    expect(paperDimensions({ ...saved, paper: 'legal', orientation: 'landscape' }, 'index')).toEqual(INDEX_PAPER_SIZE);
   });
 
   it('rejects malformed paper migration markers', () => {
